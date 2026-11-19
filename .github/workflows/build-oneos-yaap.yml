@@ -1,0 +1,91 @@
+name: Build OneOS YAAP APK (SM-A055F)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      oneos_ref:
+        description: 'Upstream fahadalijaved/OneOS commit/ref (default: 0.5.19)'
+        required: false
+        default: 'ac5abc5782c832a8fcace65f66315bc4a92cc940'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout OneOS-YAAP
+        uses: actions/checkout@v4
+        with:
+          path: yaap
+
+      - name: Checkout upstream OneOS (0.5.19)
+        run: |
+          git clone https://github.com/fahadalijaved/OneOS.git OneOS
+          cd OneOS
+          REF="${{ github.event.inputs.oneos_ref || 'ac5abc5782c832a8fcace65f66315bc4a92cc940' }}"
+          git checkout "$REF"
+
+      - name: Apply YAAP patches for Galaxy A05 (SM-A055F)
+        run: |
+          pwsh -NoProfile -File yaap/oneos_repo_patches/apply_yaap_patches.ps1 -OneOsRoot "$PWD/OneOS"
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Android SDK Platform 37 and Build-Tools 37
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDKMGR="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMGR" ]; then
+            SDKMGR="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager | head -n 1)"
+          fi
+          printf 'y\n%.0s' $(seq 1 50) > /tmp/sdk_yes.txt
+          "$SDKMGR" --sdk_root="$SDK_ROOT" --licenses < /tmp/sdk_yes.txt >/dev/null || true
+          "$SDKMGR" --sdk_root="$SDK_ROOT" "platforms;android-37.0" "build-tools;37.0.0" "build-tools;36.0.0" < /tmp/sdk_yes.txt
+          echo "sdk.dir=$SDK_ROOT" > OneOS/app-android/local.properties
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build guest manager APK and stage it
+        working-directory: OneOS/app-android
+        env:
+          GH_PACKAGES_USER: ${{ github.repository_owner }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :guest:assembleDebug --console=plain
+          cp guest/build/outputs/apk/debug/guest-debug.apk ../switcher/assets/guest_manager.apk
+          ls -lh ../switcher/assets/guest_manager.apk
+
+      - name: Build patched OneOS FullDebug APK (includes checkFullDebugStagingApk)
+        working-directory: OneOS/app-android
+        env:
+          GH_PACKAGES_USER: ${{ github.repository_owner }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          ./gradlew :app:assembleFullDebug --console=plain
+          ls -lh app/build/outputs/apk/full/debug/
+
+      - name: Run root script & installd tests
+        working-directory: OneOS/app-android
+        continue-on-error: true
+        env:
+          GH_PACKAGES_USER: ${{ github.repository_owner }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          ./gradlew :core:root:test :core:safety:test --console=plain
+
+      - name: Upload APKs as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneOS-YAAP-A05-APKs
+          path: |
+            OneOS/app-android/app/build/outputs/apk/full/debug/app-full-debug.apk
+            OneOS/app-android/guest/build/outputs/apk/debug/guest-debug.apk
+          if-no-files-found: error
