@@ -440,7 +440,15 @@ Replace-Exact "app-android\app\src\full\kotlin\com\fahadali\oneos\session\AppAss
         if (!InstalldExpected.needsYaapFsverityPatch(derivation)) return base
         val origSha = base["services_patched.jar"] ?: return base
         val yaap = YaapInstalldDexPatcher.cachedMeta(ctx, origSha) ?: return base
-        return base + ("services_patched.jar" to yaap.sha256)
+        val out = base.toMutableMap()
+        out["services_patched.jar"] = yaap.sha256
+        val origGuards = base["guards.txt"]
+        if (origGuards != null) {
+            YaapInstalldDexPatcher.cachedGuardsMeta(ctx, origGuards, origSha)?.let {
+                out["guards.txt"] = it.sha256
+            }
+        }
+        return out
     }
 '@ "AppAssets.kt expectedStageHashes YAAP"
 
@@ -560,5 +568,15 @@ Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
     if [ "$(image_sdk "$2")" = 36 ]; then carried=$INSTALLD_SHA_36 ok=$INSTALLD_OK_36
     else carried=$INSTALLD_SHA ok="$INSTALLD_SHA $INSTALLD_SHA_YAAP"; fi
 '@ "oneos_root.sh check_table YAAP ok"
+
+Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
+@'
+    [ "$(getprop ro.soc.model)" = "$3" ] || refuse "chip $(getprop ro.soc.model), profile $M_PROFILE is $3"
+'@ `
+@'
+    soc=$(getprop ro.soc.model)
+    [ "$soc" = "MT6769V/CZ" ] && soc=MT6768
+    [ "$soc" = "$3" ] || refuse "chip $soc, profile $M_PROFILE is $3"
+'@ "oneos_root.sh do_launch MT6769V/CZ alias"
 
 Write-Host "Done."

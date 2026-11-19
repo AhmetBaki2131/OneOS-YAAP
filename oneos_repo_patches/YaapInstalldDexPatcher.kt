@@ -56,8 +56,14 @@ object YaapInstalldDexPatcher {
     fun cachedFile(ctx: Context, sha256: String, bytes: Long): File? =
         File(dir(ctx), sha256).takeIf { it.isFile && it.length() == bytes }
 
-    fun cachedMeta(ctx: Context, origSha256: String): PatchedRef? {
-        val meta = File(dir(ctx), "meta_$origSha256")
+    fun cachedMeta(ctx: Context, origSha256: String): PatchedRef? =
+        readMeta(ctx, "meta_$origSha256")
+
+    fun cachedGuardsMeta(ctx: Context, origGuardsSha256: String, origSvcSha256: String): PatchedRef? =
+        readMeta(ctx, "gmeta_${origGuardsSha256}_${origSvcSha256}")
+
+    private fun readMeta(ctx: Context, metaName: String): PatchedRef? {
+        val meta = File(dir(ctx), metaName)
         if (!meta.isFile) return null
         val parts = runCatching { meta.readText().trim().split(' ') }.getOrNull() ?: return null
         if (parts.size != 2) return null
@@ -74,9 +80,45 @@ object YaapInstalldDexPatcher {
     ): List<AppAssets.Staged> {
         if (!InstalldExpected.needsYaapFsverityPatch(derivation)) return files
         val svc = files.firstOrNull { it.name == "services_patched.jar" } ?: return files
-        val ref = cachedMeta(ctx, svc.sha256) ?: buildPatchedJar(ctx, svc)
+        val svcRef = cachedMeta(ctx, svc.sha256) ?: buildPatchedJar(ctx, svc)
+        val guards = files.firstOrNull { it.name == "guards.txt" }
+        val guardsRef = guards?.let { g ->
+            cachedGuardsMeta(ctx, g.sha256, svc.sha256) ?: buildPatchedGuards(ctx, g, svc.sha256, svcRef.sha256)
+        }
         return files.map { f ->
-            if (f.name == "services_patched.jar") AppAssets.Staged(f.name, ref.sha256, ref.bytes, f.source) else f
+            when {
+                f.name == "services_patched.jar" -> AppAssets.Staged(f.name, svcRef.sha256, svcRef.bytes, f.source)
+                f.name == "guards.txt" && guardsRef != null -> AppAssets.Staged(f.name, guardsRef.sha256, guardsRef.bytes, f.source)
+                else -> f
+            }
+        }
+    }
+
+    private fun buildPatchedGuards(
+        ctx: Context,
+        guards: AppAssets.Staged,
+        origSvcSha: String,
+        newSvcSha: String,
+    ): PatchedRef {
+        val outDir = dir(ctx)
+        val raw = AppAssets.open(ctx, guards).use { it.readBytes() }.toString(Charsets.UTF_8)
+        val re = Regex("(?m)^${Regex.escape(origSvcSha)}(\\s+services_patched\\.jar)\\r?$")
+        val updated = re.replace(raw) { m -> "$newSvcSha${m.groupValues[1]}" }
+        check(updated != raw) {
+            "YAAP guards.txt patcher did not find services_patched.jar hash $origSvcSha in guards.txt"
+        }
+        val outBytes = updated.toByteArray(Charsets.UTF_8)
+        val sha = Hashes.sha256(outBytes)
+        val finalFile = File(outDir, sha)
+        val tmpFile = File(outDir, "g_${guards.sha256}.tmp")
+        try {
+            tmpFile.writeBytes(outBytes)
+            if (finalFile.exists()) finalFile.delete()
+            check(tmpFile.renameTo(finalFile)) { "Could not store YAAP-patched guards.txt" }
+            File(outDir, "gmeta_${guards.sha256}_${origSvcSha}").writeText("$sha ${outBytes.size}")
+            return PatchedRef(sha, outBytes.size.toLong())
+        } finally {
+            tmpFile.delete()
         }
     }
 
