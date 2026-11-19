@@ -579,4 +579,87 @@ Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
     [ "$soc" = "$3" ] || refuse "chip $soc, profile $M_PROFILE is $3"
 '@ "oneos_root.sh do_launch MT6769V/CZ alias"
 
+# 14. switcher/assets/guest_prepare.sh: fallback to AOSP NetworkStack & CaptivePortalLogin on non-OneUI hosts
+# On YAAP/AOSP hosts, /apex/com.android.tethering and /apex/com.android.cellbroadcast are signed with the host's
+# networkstack key, while host APKs live under /system/priv-app/NetworkStack and /system/app/CaptivePortalLogin
+# (not *Google). Without binding the host's NetworkStack over the guest's, PackageManagerService crashes
+# system_server on first scan with Signature mismatch for sharedUserId android.uid.networkstack (UID 1073).
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+bind_host_app /system/priv-app/NetworkStackGoogle "$ROOTFS/system/priv-app/NetworkStack" com.google.android.networkstack
+bind_host_app /system/app/CaptivePortalLoginGoogle "$ROOTFS/system/app/CaptivePortalLogin" com.google.android.captiveportallogin
+'@ `
+@'
+HOST_NS=/system/priv-app/NetworkStackGoogle
+HOST_NS_PKG=com.google.android.networkstack
+if [ ! -d "$HOST_NS" ] && [ -d /system/priv-app/NetworkStack ]; then
+    HOST_NS=/system/priv-app/NetworkStack
+    HOST_NS_PKG=com.android.networkstack
+fi
+HOST_CP=/system/app/CaptivePortalLoginGoogle
+HOST_CP_PKG=com.google.android.captiveportallogin
+if [ ! -d "$HOST_CP" ] && [ -d /system/app/CaptivePortalLogin ]; then
+    HOST_CP=/system/app/CaptivePortalLogin
+    HOST_CP_PKG=com.android.captiveportallogin
+fi
+GUEST_NS="$ROOTFS/system/priv-app/NetworkStack"
+[ ! -d "$GUEST_NS" ] && [ -d "$ROOTFS/system/priv-app/NetworkStackGoogle" ] && GUEST_NS="$ROOTFS/system/priv-app/NetworkStackGoogle"
+GUEST_CP="$ROOTFS/system/app/CaptivePortalLogin"
+[ ! -d "$GUEST_CP" ] && [ -d "$ROOTFS/system/app/CaptivePortalLoginGoogle" ] && GUEST_CP="$ROOTFS/system/app/CaptivePortalLoginGoogle"
+bind_host_app "$HOST_NS" "$GUEST_NS" "$HOST_NS_PKG"
+bind_host_app "$HOST_CP" "$GUEST_CP" "$HOST_CP_PKG"
+'@ "guest_prepare.sh AOSP NetworkStack/CaptivePortalLogin fallback"
+
+# 15. switcher/assets/return_to_oneui.sh: AOSP Android 17 audioserver registers media.audio_policy after zygote/activity
+Replace-Exact "switcher\assets\return_to_oneui.sh" `
+@'
+setprop ctl.start audioserver
+wait_found media.audio_policy 20 || failsafe "One UI's audioserver did not register"
+'@ `
+@'
+setprop ctl.start audioserver
+DEFER_HOST_AUDIO=0
+if [ ! -f /system/priv-app/imsservice/imsservice.apk ]; then
+    if ! wait_found media.audio_policy 5; then
+        [ "$(getprop init.svc.audioserver)" = running ] || failsafe "Host audioserver did not start"
+        DEFER_HOST_AUDIO=1
+        say "audio: AOSP host audioserver running; waiting for media.audio_policy after framework start"
+    fi
+else
+    wait_found media.audio_policy 20 || failsafe "One UI's audioserver did not register"
+fi
+'@ "return_to_oneui.sh AOSP deferred audioserver start check"
+
+Replace-Exact "switcher\assets\return_to_oneui.sh" `
+@'
+for name in vold SurfaceFlinger media.audio_policy media.audio_flinger installd; do
+    wait_found "$name" 5 || failsafe "$name is not registered"
+done
+'@ `
+@'
+GATE_B_SVCS="vold SurfaceFlinger media.audio_policy media.audio_flinger installd"
+[ "$DEFER_HOST_AUDIO" = 1 ] && GATE_B_SVCS="vold SurfaceFlinger installd"
+for name in $GATE_B_SVCS; do
+    wait_found "$name" 5 || failsafe "$name is not registered"
+done
+'@ "return_to_oneui.sh Gate B AOSP audio defer"
+
+Replace-Exact "switcher\assets\return_to_oneui.sh" `
+@'
+    [ $up -gt 0 ] && [ $t -ge $((up + 30)) ] && break
+    [ $up = 0 ] && [ $t -ge 180 ] && failsafe "user 0 not unlocked within 180 s"
+done
+'@ `
+@'
+    [ $up -gt 0 ] && [ $t -ge $((up + 30)) ] && break
+    [ $up = 0 ] && [ $t -ge 180 ] && failsafe "user 0 not unlocked within 180 s"
+done
+if [ "$DEFER_HOST_AUDIO" = 1 ]; then
+    for name in media.audio_policy media.audio_flinger; do
+        wait_found "$name" 15 || failsafe "$name did not register after AOSP host framework start"
+    done
+    say "audio: AOSP host media.audio_policy and media.audio_flinger registered"
+fi
+'@ "return_to_oneui.sh post-framework AOSP audio verify"
+
 Write-Host "Done."
