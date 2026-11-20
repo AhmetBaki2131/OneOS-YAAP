@@ -662,4 +662,248 @@ if [ "$DEFER_HOST_AUDIO" = 1 ]; then
 fi
 '@ "return_to_oneui.sh post-framework AOSP audio verify"
 
+# 16. switcher/assets/boot_status.sh & oneos_switch.sh: disable OneOSBootStatus z=2000000000 overlay and composer SIGSTOP on AOSP/MTK hosts
+# On YAAP/AOSP hosts:
+#  (a) SurfaceControl.getPhysicalDisplayIds() does not exist, so OneOSBootStatus crashes until guest DisplayManagerService
+#      starts, and then draws an opaque "Launching into <OS>" layer at z=2,000,000,000 over the booted guest screen.
+#  (b) logcat -b events does not emit boot_progress_enable_screen to the host reader, so OneOSBootStatus never auto-stops.
+#  (c) SIGSTOP on MediaTek vendor.hwcomposer in oneos_boot_hold_display deadlocks return_to_oneui.sh teardown.
+# GapSplashActivity already covers the pre-SurfaceFlinger transition cleanly.
+Replace-Exact "switcher\assets\boot_status.sh" `
+@'
+oneos_boot_hold_display() {
+    oneos_boot_ready || return 0
+'@ `
+@'
+oneos_boot_hold_display() {
+    [ -f /system/priv-app/imsservice/imsservice.apk ] || return 0
+    oneos_boot_ready || return 0
+'@ "boot_status.sh skip composer SIGSTOP on non-OneUI host"
+
+Replace-Exact "switcher\assets\boot_status.sh" `
+@'
+    chmod 755 "$ONEOS_BOOT_DIR"; chmod 644 "$ONEOS_BOOT_DIR"/verbose "$ONEOS_BOOT_DIR"/title "$ONEOS_BOOT_DIR"/system_name "$ONEOS_BOOT_DIR"/icon.png 2>/dev/null
+    /system/bin/sh /data/local/tmp/oneos/boot_status.sh supervise "$(cat "$ONEOS_BOOT_DIR/generation")" </dev/null >> "$ONEOS_BOOT_DIR/renderer.log" 2>&1 &
+}
+'@ `
+@'
+    chmod 755 "$ONEOS_BOOT_DIR"; chmod 644 "$ONEOS_BOOT_DIR"/verbose "$ONEOS_BOOT_DIR"/title "$ONEOS_BOOT_DIR"/system_name "$ONEOS_BOOT_DIR"/icon.png 2>/dev/null
+    if [ ! -f /system/priv-app/imsservice/imsservice.apk ]; then
+        touch "$ONEOS_BOOT_DIR/stop" 2>/dev/null
+        return 0
+    fi
+    /system/bin/sh /data/local/tmp/oneos/boot_status.sh supervise "$(cat "$ONEOS_BOOT_DIR/generation")" </dev/null >> "$ONEOS_BOOT_DIR/renderer.log" 2>&1 &
+}
+'@ "boot_status.sh disable OneOSBootStatus overlay worker on non-OneUI host"
+
+Replace-Exact "switcher\assets\oneos_switch.sh" `
+@'
+            setprop service.bootanim.exit 1
+            kill -9 \$(pidof bootanimation) 2>/dev/null
+'@ `
+@'
+            setprop service.bootanim.exit 1
+            kill -9 \$(pidof bootanimation) 2>/dev/null
+            touch $STAGE/data/oneos_bootui/stop 2>/dev/null
+            pkill -f OneOSBootStatus 2>/dev/null
+'@ "oneos_switch.sh UI Activator explicit OneOSBootStatus stop"
+
+# 17. switcher/assets/guest_prepare.sh & return_to_oneui.sh:
+#  (a) On AOSP/YAAP hosts, always keep host's com.android.cellbroadcast (even when the guest image ships
+#      com.google.android.cellbroadcast*, as Nothing OS 5.0 does) so android.uid.networkstack has one signer.
+#  (b) When binding host /system/priv-app/NetworkStack (com.android.networkstack) into a guest that only has
+#      GoogleNetworkStack_permissions.xml (com.google.android.networkstack), bind host NetworkStack.xml over it.
+#  (c) On in-place return, unlink stale /dev/socket/zygote and /dev/socket/usap_pool_primary (labeled socket_device:s0
+#      by the guest) as root while Permissive so init does not hit avc: denied { unlink } under Enforcing.
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+    if [ "$NAME" = cellbroadcast ]; then
+        case "$SRC" in
+            */com.android.cellbroadcast.apex|*/com.android.cellbroadcast.capex)
+                echo "cellbroadcast: the image's ${SRC##*/} is built from source, not Google's; One UI's module stays (android.uid.networkstack has one signer)"
+                return 0 ;;
+        esac
+    fi
+'@ `
+@'
+    if [ "$NAME" = cellbroadcast ]; then
+        if [ ! -d /system/priv-app/NetworkStackGoogle ] && [ -d /system/priv-app/NetworkStack ]; then
+            echo "cellbroadcast: AOSP host NetworkStack in use; host's cellbroadcast module stays (android.uid.networkstack has one signer)"
+            return 0
+        fi
+        case "$SRC" in
+            */com.android.cellbroadcast.apex|*/com.android.cellbroadcast.capex)
+                echo "cellbroadcast: the image's ${SRC##*/} is built from source, not Google's; One UI's module stays (android.uid.networkstack has one signer)"
+                return 0 ;;
+        esac
+    fi
+'@ "guest_prepare.sh keep AOSP host cellbroadcast for all guest images"
+
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+bind_host_app "$HOST_NS" "$GUEST_NS" "$HOST_NS_PKG"
+bind_host_app "$HOST_CP" "$GUEST_CP" "$HOST_CP_PKG"
+'@ `
+@'
+bind_host_app "$HOST_NS" "$GUEST_NS" "$HOST_NS_PKG"
+bind_host_app "$HOST_CP" "$GUEST_CP" "$HOST_CP_PKG"
+if [ "$HOST_NS_PKG" = com.android.networkstack ] && [ -f /system/etc/permissions/NetworkStack.xml ]; then
+    for gns_xml in "$ROOTFS/system/etc/permissions/NetworkStack.xml" "$ROOTFS/system/etc/permissions/GoogleNetworkStack_permissions.xml"; do
+        if [ -f "$gns_xml" ]; then
+            $BB mount --bind /system/etc/permissions/NetworkStack.xml "$gns_xml" &&
+                echo "Host NetworkStack.xml -> $gns_xml"
+            break
+        fi
+    done
+fi
+'@ "guest_prepare.sh bind host NetworkStack.xml over GoogleNetworkStack_permissions.xml"
+
+Replace-Exact "switcher\assets\return_to_oneui.sh" `
+@'
+    if zs_bound "$f"; then zs_left="$zs_left $f"
+    elif [ $n -gt 0 ]; then echo "Took the guest zygote's bind off $f"; fi
+done
+'@ `
+@'
+    if zs_bound "$f"; then zs_left="$zs_left $f"
+    elif [ $n -gt 0 ]; then echo "Took the guest zygote's bind off $f"; fi
+done
+if [ -z "$zs_left" ]; then
+    in_init_ns rm -f /dev/socket/zygote /dev/socket/usap_pool_primary /dev/socket/zygote_secondary /dev/socket/usap_pool_secondary 2>/dev/null || true
+fi
+'@ "return_to_oneui.sh remove guest socket_device zygote sockets before Enforcing init restart"
+
+# 18. switcher/assets/guest_prepare.sh, guest_props.sh, oneos_switch.sh: ColorOS 17 Lite & stability optimization for Galaxy A05 (4 GB RAM)
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+    for d in "$GUEST_SYSTEM_EXT"/priv-app/NTCamera "$ROOTFS"/system/priv-app/NTCamera "$GUEST_PRODUCT"/priv-app/NTCamera; do
+        [ -d "$d" ] && [ ! -L "$d" ] || continue
+        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && \
+            echo "Hid guest ${d#"$ROOTFS"/} (Nothing's camera needs Nothing's camera HAL; $OCWHY; ONEOS_GUEST_OEM_CAMERA=1 keeps it)"
+    done
+fi
+'@ `
+@'
+    for d in "$GUEST_SYSTEM_EXT"/priv-app/NTCamera "$ROOTFS"/system/priv-app/NTCamera "$GUEST_PRODUCT"/priv-app/NTCamera; do
+        [ -d "$d" ] && [ ! -L "$d" ] || continue
+        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && \
+            echo "Hid guest ${d#"$ROOTFS"/} (Nothing's camera needs Nothing's camera HAL; $OCWHY; ONEOS_GUEST_OEM_CAMERA=1 keeps it)"
+    done
+fi
+# ColorOS 17 optimization on mid-range / 4 GB RAM phones (Galaxy A05):
+# 1. Missing native library crashes: OplusLocationService crashes repeatedly on missing libaol_jni.oplus.so.
+# 2. SystemUI ANR & black-screen on sleep: UMS (com.oplus.pantanal.ums / Fluid Cloud Seedling) blocks
+#    SystemUI's MediaSeedlingBgThread for 8.5s during sleep, and SmartSideBar blocks ViewRootImpl on screen_off.
+# 3. OPPO AI / telemetry / background bloat & Qualcomm-only services that fail or thrash kswapd0 on 4 GB RAM.
+# 4. Heavy non-essential Google background apps (keep Play services, Play Store, Gboard, WebView, Trichrome, Dialer, Messages, Contacts).
+if [ "${ONEOS_GUEST_COLOROS_LITE:-1}" = 1 ] && { [ -e "$ROOTFS/system/framework/oplus-services.jar" ] || [ -e "$GUEST_SYSTEM_EXT/framework/oplus-services.jar" ]; }; then
+    co_hid=0
+    for d in \
+        "$GUEST_SYSTEM_EXT/app/OplusLocationService" \
+        "$GUEST_SYSTEM_EXT/app/NtnSatApp" "$GUEST_SYSTEM_EXT/app/RsmcSatelliteAuth" "$GUEST_SYSTEM_EXT/app/TTSatelliteAuth" \
+        "$GUEST_SYSTEM_EXT/app/Olc" "$GUEST_SYSTEM_EXT/app/OTrace" "$GUEST_SYSTEM_EXT/app/LogKit" \
+        "$GUEST_SYSTEM_EXT/app/PowerMonitor" "$GUEST_SYSTEM_EXT/app/OTA" \
+        "$GUEST_SYSTEM_EXT/app/OplusCommercialEngineerCamera" "$GUEST_SYSTEM_EXT/app/OplusCommercialEngineerMode" \
+        "$GUEST_SYSTEM_EXT/app/OplusEngineerNetwork" "$GUEST_SYSTEM_EXT/app/NfcEngineerTest" "$GUEST_SYSTEM_EXT/app/BTtestmode" \
+        "$GUEST_SYSTEM_EXT/app/QCC" "$GUEST_SYSTEM_EXT/app/QtiTelephonyService" "$GUEST_SYSTEM_EXT/app/ImsDataChannelService" \
+        "$GUEST_SYSTEM_EXT/app/atfwd" "$GUEST_SYSTEM_EXT/app/workloadclassifier" \
+        "$GUEST_SYSTEM_EXT/priv-app/DeepThinker" "$GUEST_SYSTEM_EXT/priv-app/StdID" "$GUEST_SYSTEM_EXT/priv-app/DFS" \
+        "$GUEST_SYSTEM_EXT/priv-app/MoseyApp" "$GUEST_SYSTEM_EXT/priv-app/BeidouMsgService" "$GUEST_SYSTEM_EXT/priv-app/UpgradeGuide" \
+        "$GUEST_SYSTEM_EXT/priv-app/dcf" "$GUEST_SYSTEM_EXT/priv-app/dpmserviceapp" "$GUEST_SYSTEM_EXT/priv-app/ims" \
+        "$GUEST_SYSTEM_EXT/priv-app/qcrilmsgtunnel" "$GUEST_SYSTEM_EXT/priv-app/xrcbservice" "$GUEST_SYSTEM_EXT/priv-app/xrvdservice" \
+        "$ROOTFS/system/app/AppSearchAiSealConfig" "$ROOTFS/system/app/CrossDeviceServiceBroker" \
+        "$ROOTFS/my_stock/priv-app/UMS" "$ROOTFS/my_stock/app/SmartSideBar" "$ROOTFS/my_stock/app/AssistantScreen" \
+        "$ROOTFS/my_stock/app/CardService" "$ROOTFS/my_stock/app/FloatAssistant" "$ROOTFS/my_stock/app/AIMemory" \
+        "$ROOTFS/my_stock/app/AIWriter" "$ROOTFS/my_stock/app/ARCore" "$ROOTFS/my_stock/app/BaseOcrScanner" \
+        "$ROOTFS/my_stock/app/Gleaner" "$ROOTFS/my_stock/app/Instant" "$ROOTFS/my_stock/app/Karaoke" \
+        "$ROOTFS/my_stock/app/KeKePay" "$ROOTFS/my_stock/app/LocationProxy" "$ROOTFS/my_stock/app/MCS" \
+        "$ROOTFS/my_stock/app/MSPService" "$ROOTFS/my_stock/app/OpenCapabilityService" "$ROOTFS/my_stock/app/OplusOperationManual" \
+        "$ROOTFS/my_stock/app/OplusPhoneActivation" "$ROOTFS/my_stock/app/Pictorial" "$ROOTFS/my_stock/app/RomUpdate" \
+        "$ROOTFS/my_stock/app/SceneMode" "$ROOTFS/my_stock/app/SecurePay" "$ROOTFS/my_stock/app/SmartEngine" \
+        "$ROOTFS/my_stock/app/SoftsimRedteaRoaming" "$ROOTFS/my_stock/app/ColorDirectService" \
+        "$ROOTFS/my_stock/priv-app/AISeal" "$ROOTFS/my_stock/priv-app/AIUnit" "$ROOTFS/my_stock/priv-app/aiassistant" \
+        "$ROOTFS/my_stock/priv-app/ContentPortal" "$ROOTFS/my_stock/priv-app/Cota" "$ROOTFS/my_stock/priv-app/DCS" \
+        "$ROOTFS/my_stock/priv-app/DRS" "$ROOTFS/my_stock/priv-app/DSF" "$ROOTFS/my_stock/priv-app/DeviceHub" \
+        "$ROOTFS/my_stock/priv-app/DeviceIntegrationService" "$ROOTFS/my_stock/priv-app/GlobalDrag" "$ROOTFS/my_stock/priv-app/GlobalSearch" \
+        "$ROOTFS/my_stock/priv-app/HeyCast" "$ROOTFS/my_stock/priv-app/KeKeMarket" "$ROOTFS/my_stock/priv-app/KeKeUserCenter" \
+        "$ROOTFS/my_stock/priv-app/KeKeUserCenterAccount" "$ROOTFS/my_stock/priv-app/LinktoWindows" "$ROOTFS/my_stock/priv-app/MDSService" \
+        "$ROOTFS/my_stock/priv-app/Matrix" "$ROOTFS/my_stock/priv-app/Metis" "$ROOTFS/my_stock/priv-app/MyDevices" \
+        "$ROOTFS/my_stock/priv-app/NumberRecognition" "$ROOTFS/my_stock/priv-app/OPSynergy" "$ROOTFS/my_stock/priv-app/OShare" \
+        "$ROOTFS/my_stock/priv-app/OplusBootReg" "$ROOTFS/my_stock/priv-app/OplusGames" "$ROOTFS/my_stock/priv-app/SandboxRuntime" \
+        "$ROOTFS/my_stock/priv-app/SceneService" "$ROOTFS/my_stock/priv-app/SecurityGuard" "$ROOTFS/my_stock/priv-app/Shelper" \
+        "$ROOTFS/my_stock/priv-app/StdSP" "$ROOTFS/my_stock/priv-app/dmp" \
+        "$ROOTFS/my_product/app/AONService" "$ROOTFS/my_product/app/Facebook-appmanager" "$ROOTFS/my_product/app/GPay3" \
+        "$ROOTFS/my_product/app/Gmail2" "$ROOTFS/my_product/app/GoogleGemini" "$ROOTFS/my_product/app/GoogleLens" \
+        "$ROOTFS/my_product/app/GoogleLocationHistory" "$ROOTFS/my_product/app/GoogleWallet" "$ROOTFS/my_product/app/Maps" \
+        "$ROOTFS/my_product/app/Meet" "$ROOTFS/my_product/app/Photos" "$ROOTFS/my_product/app/SpeechServicesByGoogle" \
+        "$ROOTFS/my_product/app/SwitchAccess" "$ROOTFS/my_product/app/YandexKeyboardV" "$ROOTFS/my_product/app/YouTube" \
+        "$ROOTFS/my_product/app/clouddpc" "$ROOTFS/my_product/app/talkback" \
+        "$ROOTFS/my_product/priv-app/AICallAssistant" "$ROOTFS/my_product/priv-app/AICore" "$ROOTFS/my_product/priv-app/AndroidAutoStub" \
+        "$ROOTFS/my_product/priv-app/AndroidSystemIntelligence_Features" "$ROOTFS/my_product/priv-app/CrossDeviceServicesStub" \
+        "$ROOTFS/my_product/priv-app/Facebook-installer" "$ROOTFS/my_product/priv-app/Facebook-services" \
+        "$ROOTFS/my_product/priv-app/FamilyLinkParentalControls" "$ROOTFS/my_product/priv-app/GoogleOdad" \
+        "$ROOTFS/my_product/priv-app/GoogleRestore" "$ROOTFS/my_product/priv-app/GoogleVelvet_CTS" \
+        "$ROOTFS/my_product/priv-app/HotwordEnrollmentXGoogleHEXAGON_WIDEBAND.apk" \
+        "$ROOTFS/my_product/priv-app/HotwordEnrollmentYGoogleHEXAGON_WIDEBAND.apk" \
+        "$ROOTFS/my_product/priv-app/PersonalSafety" "$ROOTFS/my_product/priv-app/PrivateComputeServices" \
+        "$ROOTFS/my_product/priv-app/RemoteControl" "$ROOTFS/my_product/priv-app/SearchSelector" \
+        "$ROOTFS/my_product/priv-app/SystemClone" "$ROOTFS/my_product/priv-app/Wellbeing"; do
+        [ -d "$d" ] && [ ! -L "$d" ] || continue
+        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && co_hid=$((co_hid + 1))
+    done
+    for d in "$ROOTFS"/my_*/del-app/* "$GUEST_SYSTEM_EXT"/app/SubsysPlugins_plugin_* "$GUEST_SYSTEM_EXT"/app/NetworkSense_plugin_* "$GUEST_SYSTEM_EXT"/app/NetworkAssistSys_plugin_*; do
+        [ -d "$d" ] && [ ! -L "$d" ] || continue
+        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && co_hid=$((co_hid + 1))
+    done
+    echo "ColorOS Lite optimization: hid $co_hid non-essential AI/Google/OEM/crashing service folders"
+fi
+'@ "guest_prepare.sh ColorOS 17 Lite optimization"
+
+Replace-Exact "switcher\assets\guest_props.sh" `
+@'
+            sed -i "/^$key=/d" "$NEW"
+            echo "$key=0" >> "$NEW"
+            echo "guest_props: $key=0 for the session (no first-boot clock reset to 1 January)"
+        fi
+    fi
+'@ `
+@'
+            sed -i "/^$key=/d" "$NEW"
+            echo "$key=0" >> "$NEW"
+            echo "guest_props: $key=0 for the session (no first-boot clock reset to 1 January)"
+        fi
+        # ColorOS 17 performance & log optimization on mid-range / non-OPPO ART hosts:
+        # 1. sys.gcsupression.optimize.enable=false stops OplusShellTransition from failing on missing
+        #    VMRuntime.SupressionGC/DesupressionGC on every window transition.
+        # 2. Silencing ANDR-PERF-CLIENT-SYS & [UAH_CLIENT] removes 3,200+ error log lines per session.
+        # 3. Limiting background dex2oat threads to 2 keeps UI/SystemUI responsive on 4 GB RAM.
+        for kv in sys.gcsupression.optimize.enable=false persist.sys.oplus.anim_level=2 \
+                  dalvik.vm.dex2oat-threads=2 dalvik.vm.background-dex2oat-threads=1 \
+                  log.tag.ANDR-PERF-CLIENT-SYS=S log.tag.UAH_CLIENT=S; do
+            k=${kv%%=*}
+            grep -qxF "$k" "$HOST" && continue
+            sed -i "/^$(echo "$k" | sed 's/\./\\./g')=/d" "$NEW"
+            echo "$kv" >> "$NEW"
+        done
+        echo "guest_props: ColorOS Lite props set (sys.gcsupression.optimize.enable=false, dex2oat-threads=2, ANDR-PERF-CLIENT-SYS/UAH_CLIENT silenced)"
+    fi
+'@ "guest_props.sh ColorOS 17 Lite props"
+
+Replace-Exact "switcher\assets\oneos_switch.sh" `
+@'
+            # Once with the fixed panel curve: the saved value was chosen while the
+            # curve was wrong (run 28: 1702 looked like ~420 nits, is ~15).
+            [ -f $STAGE/data/.oneos_curve2 ] || { $BB nsenter -t \$PID -m /system/bin/sh /data/oneos_genv.sh /system/bin/settings put system screen_brightness 4570; touch $STAGE/data/.oneos_curve2; }
+            fi
+'@ `
+@'
+            # Once with the fixed panel curve: the saved value was chosen while the
+            # curve was wrong (run 28: 1702 looked like ~420 nits, is ~15).
+            [ -f $STAGE/data/.oneos_curve2 ] || { $BB nsenter -t \$PID -m /system/bin/sh /data/oneos_genv.sh /system/bin/settings put system screen_brightness 4570; touch $STAGE/data/.oneos_curve2; }
+            # Prevent early screen-off sleep crash (OplusDisplayPowerControllerExtImpl.onGoToSleepFinish NPE)
+            $BB nsenter -t \$PID -m /system/bin/sh /data/oneos_genv.sh /system/bin/settings put system screen_off_timeout 600000 2>/dev/null
+            $BB nsenter -t \$PID -m /system/bin/sh /data/oneos_genv.sh /system/bin/svc power stayon true 2>/dev/null
+            fi
+'@ "oneos_switch.sh ColorOS screen_off_timeout and stayon"
+
 Write-Host "Done."
