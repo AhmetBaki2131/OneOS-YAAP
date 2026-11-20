@@ -906,4 +906,227 @@ Replace-Exact "switcher\assets\oneos_switch.sh" `
             fi
 '@ "oneos_switch.sh ColorOS screen_off_timeout and stayon"
 
+# ---------------------------------------------------------------------------
+# Patch 19: Galaxy A05 / ColorOS 17 fixes (SIM radio kick, camera ABI + WingCam,
+# resolution/cutout, RAM, SD card).
+# ---------------------------------------------------------------------------
+
+# 19A: never restart rild on MediaTek ccci_mdinit phones.
+Replace-Exact "switcher\assets\libsec-ril-patch.sh" `
+@'
+restart_ril() {
+    /system/bin/setprop ctl.restart ril-daemon 2>/dev/null
+'@ `
+@'
+# MediaTek (Galaxy A05): ccci_mdinit is oneshot, so a restarted rild never gets its modem back.
+is_mtk_ccci() {
+    [ -f /vendor/etc/init/init.ss_cccimdinit.rc ] && [ ! -x /vendor/bin/cbd ] && [ ! -x /vendor/bin/cpboot-daemon ]
+}
+restart_ril() {
+    is_mtk_ccci && { echo "inbound SMS: MediaTek modem, rild not restarted"; return 0; }
+    /system/bin/setprop ctl.restart ril-daemon 2>/dev/null
+'@ "libsec-ril-patch.sh MediaTek guard (restart)"
+
+Replace-Exact "switcher\assets\libsec-ril-patch.sh" `
+@'
+apply() {
+    [ -f "$LIB" ] || {
+'@ `
+@'
+apply() {
+    is_mtk_ccci && { echo "inbound SMS: MediaTek modem, vendor RIL left alone"; return 0; }
+    [ -f "$LIB" ] || {
+'@ "libsec-ril-patch.sh MediaTek guard (apply)"
+
+# 19B: patched One UI camera ABI must not be bound on non-One UI hosts (YAAP uses stock AOSP codes).
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+if [ -f "$STAGE/framework_patched.jar" ]; then
+    $BB umount -l "$ROOTFS/system/framework/framework.jar" 2>/dev/null || true
+'@ `
+@'
+if [ -f "$STAGE/framework_patched.jar" ] && { [ -f /system/priv-app/imsservice/imsservice.apk ] || [ -e "$GUEST_SYSTEM_EXT/framework/miui-services.jar" ] || [ -e "$ROOTFS/system_ext/framework/miui-services.jar" ]; }; then
+    $BB umount -l "$ROOTFS/system/framework/framework.jar" 2>/dev/null || true
+'@ "guest_prepare.sh framework_patched only on One UI hosts"
+
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+    if [ -f "$STAGE/${pair%%:*}" ]; then
+        $BB umount -l "$ROOTFS/system/lib64/${pair#*:}" 2>/dev/null || true
+'@ `
+@'
+    if [ -f "$STAGE/${pair%%:*}" ] && ! { [ ! -f /system/priv-app/imsservice/imsservice.apk ] && case "${pair%%:*}" in libcamera*) true ;; *) false ;; esac; }; then
+        $BB umount -l "$ROOTFS/system/lib64/${pair#*:}" 2>/dev/null || true
+'@ "guest_prepare.sh camera libs only on One UI hosts"
+
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+ || [ -d "$GUEST_SYSTEM_EXT/app/Aperture" ] || [ "$SAMCAM" = 1 ]; }; then
+'@ `
+@'
+ || [ -d "$GUEST_SYSTEM_EXT/app/Aperture" ] || [ "$SAMCAM" = 1 ] || [ -f /system/priv-app/WingCam-N28/WingCam-N28.apk ]; }; then
+'@ "guest_prepare.sh hide OplusCamera with WingCam"
+
+# 19B/19D: ColorOS lite hide list additions, keep cellular plugins, stage WingCam as a system app.
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+        "$ROOTFS/my_stock/priv-app/StdSP" "$ROOTFS/my_stock/priv-app/dmp" \
+'@ `
+@'
+        "$ROOTFS/my_stock/priv-app/StdSP" "$ROOTFS/my_stock/priv-app/dmp" \
+        "$ROOTFS/my_stock/priv-app/PhoneManager" "$ROOTFS/my_stock/priv-app/AccessoryFramework" \
+        "$GUEST_SYSTEM_EXT/app/SubsystemApp" "$GUEST_SYSTEM_EXT/app/NetworkHealthService" \
+'@ "guest_prepare.sh Lite hide list RAM hogs"
+
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+ "$GUEST_SYSTEM_EXT"/app/NetworkSense_plugin_* "$GUEST_SYSTEM_EXT"/app/NetworkAssistSys_plugin_*; do
+'@ `
+@'
+ "$GUEST_SYSTEM_EXT"/app/NetworkSense_plugin_*; do
+'@ "guest_prepare.sh keep NetworkAssistSys plugins"
+
+Replace-Exact "switcher\assets\guest_prepare.sh" `
+@'
+    echo "ColorOS Lite optimization: hid $co_hid non-essential AI/Google/OEM/crashing service folders"
+fi
+'@ `
+@'
+    echo "ColorOS Lite optimization: hid $co_hid non-essential AI/Google/OEM/crashing service folders"
+fi
+# YAAP's Samsung camera (WingCam-N28) as a ColorOS system app: stock AOSP camera ABI matches both
+# hosts. Staged once on /data (too big for the 1 MB overlay tmpfs), bound over a hidden app folder.
+WCAPK=/system/priv-app/WingCam-N28/WingCam-N28.apk
+WCMP="$ROOTFS/my_stock/app/Karaoke"
+if [ -f "$WCAPK" ] && [ -d "$WCMP" ] && [ -e "$ROOTFS/system/framework/oplus-services.jar" -o -e "$GUEST_SYSTEM_EXT/framework/oplus-services.jar" ]; then
+    WCD="$STAGE/wingcam"; WCSTAMP=$(stat -c %s "$WCAPK" 2>/dev/null)
+    if [ "$(cat "$WCD/.stamp" 2>/dev/null)" != "$WCSTAMP" ]; then
+        rm -rf "$WCD"; mkdir -p "$WCD/lib/arm64"
+        cp "$WCAPK" "$WCD/WingCam-N28.apk"
+        for p in libBST libBSD_jni libBarcodeReader.quram libBstStick2D libFaceDetectCA libMTFilters libMTRefocus libMTSingleBokeh libSEF.quram libagifencoder.quram libdualAfter libexifa.camera.samsung libfloatingfeature libimagecodec.quram libjniBst libjni_imageutils libjpega.camera.samsung libmegface libmt_ libwingrefocusJni libwt_ libc++_shared libtensorflowlite_jni libRSSupport libblasV8 librsjni; do
+            for f in /system/lib64/$p*.so; do [ -f "$f" ] && cp "$f" "$WCD/lib/arm64/"; done
+        done
+        chmod -R a+rX "$WCD"; $BB chcon -R u:object_r:system_file:s0 "$WCD" 2>/dev/null || true
+        echo "$WCSTAMP" > "$WCD/.stamp"
+    fi
+    # A copy installed from /data would shadow the system app.
+    rm -rf "$STAGE"/data/app/*/com.sec.android.app.camera-* 2>/dev/null
+    $BB umount -l "$WCMP" 2>/dev/null || true
+    if $BB mount --bind "$WCD" "$WCMP"; then
+        $BB mount --make-rslave "$WCMP" 2>/dev/null || true
+        echo "WingCam-N28 bound as ColorOS system app over ${WCMP#"$ROOTFS"/}"
+    else
+        echo "!!! WingCam-N28 bind failed"
+    fi
+fi
+'@ "guest_prepare.sh WingCam staging"
+
+# 19C: guest props for 720x1600.
+Replace-Exact "switcher\assets\guest_props.sh" `
+@'
+        echo "guest_props: ColorOS Lite props set (sys.gcsupression.optimize.enable=false, dex2oat-threads=2, ANDR-PERF-CLIENT-SYS/UAH_CLIENT silenced)"
+'@ `
+@'
+        echo "guest_props: ColorOS Lite props set (sys.gcsupression.optimize.enable=false, dex2oat-threads=2, ANDR-PERF-CLIENT-SYS/UAH_CLIENT silenced)"
+        case "$(getprop ro.product.device)$(getprop ro.product.vendor.device)" in
+            *a05m*)
+                for kv in ro.oplus.resolution.high=720,1600 ro.oplus.resolution.low=720,1600 \
+                          ro.oplus.density.fhd_default=300 ro.oplus.density.qhd_default=300; do
+                    k=${kv%%=*}
+                    grep -qxF "$k" "$HOST" && continue
+                    sed -i "/^$(echo "$k" | sed 's/\./\\./g')=/d" "$NEW"
+                    echo "$kv" >> "$NEW"
+                done
+                echo "guest_props: ColorOS 720x1600 @300 dpi props set (A05)" ;;
+        esac
+'@ "guest_props.sh A05 resolution props"
+
+# 19C + helper script: host_statusbar for A05, and the fixes script itself.
+Replace-Exact "switcher\assets\oneos_switch.sh" `
+@'
+# One UI's scale, for the guest's density (UI activator; standing rule: right on
+'@ `
+@'
+# Galaxy A05 (720 x 1600): a small cutout so ColorOS apps do not reserve 160 px at the top.
+case "$(getprop ro.product.device)$(getprop ro.product.vendor.device)" in
+    *a05m*)
+        { echo "spec=M -32,0 L -32,58 L 32,58 L 32,0 Z"; echo "height=66"; echo "radius=36"
+          echo "hole=328,0:392,58"; echo "rect_px=328,0:392,58"; echo "hole_px=328,0:392,58"
+        } > "$STAGE/host_statusbar"
+        echo "328,0:392,58" > "$STAGE/host_screenhole"
+        echo 36 > "$STAGE/host_corner_radius"
+        echo "Host status bar: A05 fixed cutout written" ;;
+esac
+# Post-boot fixes for the guest (radio kick, WingCam permissions, RAM, SD card), started by the UI activator.
+cat > "$STAGE/oneos_fixes.sh" <<'OSFIXEOF'
+#!/system/bin/sh
+PID=$1
+STAGE=/data/local/tmp/oneos
+BB=""
+for c in /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox /data/adb/magisk/busybox; do [ -x "$c" ] && { BB=$c; break; }; done
+G() { $BB nsenter -t "$PID" -m /system/bin/sh /data/oneos_genv.sh "$@"; }
+n=0; while [ $n -lt 30 ]; do G /system/bin/service check phone 2>/dev/null | grep -q ': found' && break; n=$((n+1)); sleep 1; done
+sleep 3
+# SIM: host radio is already ON, so the guest never saw radioStateChanged. Cycle it (no rild restart).
+case "$(getprop gsm.sim.state)" in
+    LOADED*|READY*)
+        if [ "$(getprop ril.radiostate)" = 10 ] && G /system/bin/dumpsys isub 2>/dev/null | grep -q 'mSimState.*UNKNOWN'; then
+            echo "radio kick: guest has no SIM state, cycling radio power"
+            service call android.hardware.radio.modem.IRadioModem/slot1 16 i32 9001 i32 0 i32 0 i32 0
+            sleep 2
+            service call android.hardware.radio.modem.IRadioModem/slot1 16 i32 9002 i32 1 i32 0 i32 0
+        fi ;;
+esac
+# RAM on 4 GB phones.
+MT=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+if [ "${MT:-9999999}" -lt 5000000 ]; then
+    for p in com.google.android.apps.chromecast.app com.heytap.store com.coloros.phonemanager com.heytap.accessory com.oplus.subsys com.oplus.nhs; do
+        G /system/bin/pm disable-user --user 0 $p >/dev/null 2>&1
+    done
+    G /system/bin/device_config put activity_manager max_cached_processes 16 >/dev/null 2>&1
+fi
+# WingCam permissions.
+n=0; while [ $n -lt 20 ]; do G /system/bin/pm path com.sec.android.app.camera 2>/dev/null | grep -q package && break; n=$((n+1)); sleep 1; done
+if G /system/bin/pm path com.sec.android.app.camera 2>/dev/null | grep -q package; then
+    for perm in CAMERA RECORD_AUDIO READ_PHONE_STATE READ_MEDIA_IMAGES READ_MEDIA_VIDEO POST_NOTIFICATIONS; do
+        G /system/bin/pm grant com.sec.android.app.camera android.permission.$perm >/dev/null 2>&1
+    done
+    G /system/bin/appops set --user 0 com.sec.android.app.camera READ_PHONE_STATE allow >/dev/null 2>&1
+    echo "WingCam permissions granted"
+fi
+# SD card: mount inside MediaProvider's own mount namespace only.
+DEV=/dev/block/mmcblk1p1
+if [ -b "$DEV" ]; then
+    FST=$($BB blkid "$DEV" 2>/dev/null | sed -n 's/.*TYPE="\([^"]*\)".*/\1/p')
+    [ -n "$FST" ] || FST=vfat
+    MP=""; n=0
+    while [ $n -lt 30 ] && [ -z "$MP" ]; do
+        for d in /proc/[0-9]*; do
+            [ "$(tr '\0' ' ' < $d/cmdline 2>/dev/null | cut -d' ' -f1)" = com.google.android.providers.media.module ] && { MP=${d#/proc/}; break; }
+        done
+        [ -n "$MP" ] || { n=$((n+1)); sleep 1; }
+    done
+    if [ -n "$MP" ] && ! grep -q ' /storage/emulated/0/SDCard ' /proc/$MP/mountinfo 2>/dev/null; then
+        $BB nsenter -t "$MP" -m /system/bin/mkdir -p /storage/emulated/0/SDCard
+        case "$FST" in
+            vfat) OPTS=rw,nosuid,nodev,noexec,noatime,gid=1077,fmask=0007,dmask=0007,utf8,shortname=mixed ;;
+            *) OPTS=rw,nosuid,nodev,noexec,noatime ;;
+        esac
+        $BB nsenter -t "$MP" -m $BB mount -t "$FST" -o "$OPTS" "$DEV" /storage/emulated/0/SDCard && echo "SD card ($FST) mounted for the guest"
+    fi
+fi
+OSFIXEOF
+chmod 755 "$STAGE/oneos_fixes.sh"
+# One UI's scale, for the guest's density (UI activator; standing rule: right on
+'@ "oneos_switch.sh A05 cutout + fixes script"
+
+Replace-Exact "switcher\assets\oneos_switch.sh" `
+@'
+            $BB nsenter -t \$PID -m /system/bin/sh /data/oneos_genv.sh /system/bin/svc power stayon true 2>/dev/null
+'@ `
+@'
+            $BB nsenter -t \$PID -m /system/bin/sh /data/oneos_genv.sh /system/bin/svc power stayon true 2>/dev/null
+            ( $BB sh $STAGE/oneos_fixes.sh \$PID >> $STAGE/oneos_fixes.log 2>&1 & )
+'@ "oneos_switch.sh launch fixes script"
+
 Write-Host "Done."
