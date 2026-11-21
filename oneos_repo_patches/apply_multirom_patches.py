@@ -47,31 +47,24 @@ def transform(root):
         for kv in $CO_PERF; do''')
     edit(props, 'echo "guest_props: ColorOS Lite props set (sys.gcsupression.optimize.enable=false, dex2oat-threads=2, ANDR-PERF-CLIENT-SYS/UAH_CLIENT silenced)"',
          'echo "guest_props: ColorOS compatibility props: $CO_PERF (diagnostic logs retained)"')
-    # A05 has no NFC, UWB, IR blaster or 5G modem. Hide only optional ColorOS
-    # packages; keep shared telephony components because LTE data depends on them.
-    edit(prepare, '''    echo "ColorOS Lite optimization: hid $co_hid non-essential AI/Google/OEM/crashing service folders"
-fi
-# YAAP's Samsung camera''', '''    echo "ColorOS Lite optimization: hid $co_hid non-essential AI/Google/OEM/crashing service folders"
-fi
-if [ "${ONEOS_GUEST_A05_TRIM:-1}" = 1 ] &&
-   { [ -e "$ROOTFS/system/framework/oplus-services.jar" ] || [ -e "$GUEST_SYSTEM_EXT/framework/oplus-services.jar" ]; } &&
-   case "$(getprop ro.product.device)$(getprop ro.product.vendor.device)" in *a05m*) true ;; *) false ;; esac; then
-    a05_hid=0
-    for d in \
-        "$STAGE/data/app/ConsumerIRApp" "$STAGE/data/app/FinShellPay" "$STAGE/data/app/OneKeyLockScreen" \
-        "$ROOTFS/my_product/app/GPay3" "$ROOTFS/my_product/app/GoogleWallet" \
-        "$ROOTFS/my_product/priv-app/RemoteControl" \
-        "$ROOTFS/my_stock/app/KeKePay" "$ROOTFS/my_stock/app/SecurePay" \
-        "$ROOTFS/system/priv-app/NfcNci" "$GUEST_SYSTEM_EXT/app/NfcEngineerTest" \
-        "$GUEST_SYSTEM_EXT/priv-app/OplusNearComm" "$GUEST_SYSTEM_EXT/priv-app/OplusVirtualComm" \
-        "$GUEST_SYSTEM_EXT/priv-app/VirtualCommService" \
-        "$GUEST_SYSTEM_EXT/app/NetworkAssistSys_plugin_CellularVirtualData"; do
-        [ -d "$d" ] && [ ! -L "$d" ] || continue
-        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && a05_hid=$((a05_hid + 1))
+    # Remove unsupported ColorOS packages from Android user 0 after PackageManager
+    # is ready. This is a real per-user uninstall, not a bind mount or disable.
+    # Keep IMS/RIL/APN/carrier packages so LTE and modem-supported LTE-A remain.
+    edit(switch, '''sleep 3
+# SIM: host radio''', '''sleep 3
+# Galaxy A05 has no NFC, IR blaster or 5G modem. Remove their ColorOS frontends
+# from user 0; leave the underlying read-only image and LTE telephony intact.
+if G /system/bin/pm path com.oplus.consumerIRApp 2>/dev/null | grep -q package; then
+    a05_removed=0
+    for p in com.oplus.consumerIRApp com.finshell.fin com.coloros.onekeylockscreen \
+             com.android.nfc com.android.se com.android.nfc.common.overlay com.android.nfc.resources.overlay.common \
+             com.android.uwb.resources com.android.uwb.resources.overlay.common com.google.android.uwb.resources.overlay.common \
+             com.oplus.nearcomm com.oplus.virtualcomm com.oplus.virtualcomm2 com.oplus.nas.virtualdata; do
+        G /system/bin/pm uninstall --user 0 "$p" 2>/dev/null | grep -q Success && a05_removed=$((a05_removed + 1))
     done
-    echo "A05 ColorOS trim: hid $a05_hid optional IR, wallet/NFC, one-key and virtual-radio packages (LTE telephony kept)"
+    echo "A05 ColorOS trim: uninstalled $a05_removed IR, wallet/NFC/eSE, UWB, one-key and virtual-radio packages from user 0 (IMS/RIL/LTE/LTE-A kept)"
 fi
-# YAAP's Samsung camera''')
+# SIM: host radio''')
     # WingCam passes a component name to AppOps on ColorOS (live A05 evidence).
     edit(prepare, 'if [ -f "$WCAPK" ] && [ -d "$WCMP" ]',
          'if [ "${ONEOS_GUEST_WINGCAM:-0}" = 1 ] && [ -f "$WCAPK" ] && [ -d "$WCMP" ]')
