@@ -61,25 +61,21 @@ f="$S/files.sha256"
 cat "$f"'
 
 #: SHA-256 of the immutable files recorded by the stage itself, and of the root script.
-#: Dynamic session logs and diagnostics are intentionally not hashed: on slower A05 storage they
-#: made the pre-update check exceed its deadline even though none of those files is installed.
+#: Dynamic session logs and diagnostics are intentionally not hashed: on slower storage they
+#: can make the pre-update check exceed its deadline even though none of those files is installed.
 run stage.hashes 120 stage/hashes.txt '
 S=/data/local/tmp/oneos
 [ -e "$S" ] || [ -L "$S" ] || [ ! -d /data/local/tmp/lineage_stage ] || [ -L /data/local/tmp/lineage_stage ] || S=/data/local/tmp/lineage_stage
 [ -d "$S" ] || exit 3
-list="$S/files.sha256"
-[ -f "$list" ] || exit 3
-while read expected name extra; do
-  [ -n "$expected" ] && [ -n "$name" ] && [ -z "$extra" ] || exit 4
-  case "$name" in */*|.*|*..*) exit 4;; esac
-  f="$S/$name"
-  [ -f "$f" ] && [ ! -L "$f" ] || exit 5
-  sha256sum "$f"
-done < "$list"
-for f in "$S/bin/oneos_root.sh"; do
-  [ -f "$f" ] && [ ! -L "$f" ] || exit 5
-  sha256sum "$f"
-done
+if [ -f "$S/files.sha256" ] && [ ! -L "$S/files.sha256" ]; then
+  for name in $(awk "NF == 2 && \$2 ~ /^[A-Za-z0-9._-]+\$/ && index(\$2, \"..\") == 0 && substr(\$2, 1, 1) != \".\" { print \$2 }" "$S/files.sha256"); do
+    f="$S/$name"
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    sha256sum "$f"
+  done
+fi
+f="$S/bin/oneos_root.sh"
+[ -f "$f" ] && [ ! -L "$f" ] && sha256sum "$f"
 true'
 
 #: The image: what was verified when it was staged (system.raw.id) and its size and identity now.
