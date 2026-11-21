@@ -8,9 +8,11 @@ GitHub Actions derlemesi güncel kararlı upstream `OneOS 0.5.32` (`v0.5.32`) s�
 
 - Kablosuz ADB ile `SM-A055F`, Android 17 / SDK 37 ve `720x1600 @ 300 dpi` doğrulandı.
 - Kamera HAL'i 5 aygıt bildiriyor. İsteğe bağlı WingCam aktarımı ColorOS'ta AppOps'a paket yerine `paket/aktivite` gönderdiği için `CAMERA_DISABLED` oluyor; bu aktarım artık varsayılan olarak kapalıdır (`ONEOS_GUEST_WINGCAM=1` ile deneysel olarak açılabilir).
+- Özel ROM ev sahibindeki `SAMCAM` işareti artık ColorOS kamerasını gizlemez. Önceki oturumdan kalan WingCam kullanıcı 0'dan kaldırılır ve ColorOS'un kendi kamera uygulaması korunur; gerçek One UI ev sahiplerinin davranışı değişmez.
 - Çentik yolu ile Oplus ekran deliği koordinatları ayrıldı. ColorOS'un 160 px üst boşluk bırakmasına yol açan yanlış format giderildi; A05 hedefi 58 px delik ve 66 px durum çubuğudur.
 - Genel ColorOS Lite gizleme işlemi isteğe bağlıdır (`ONEOS_GUEST_COLOROS_LITE=1`). A05'e özel sadeleştirme IR kumanda, cüzdan/ödeme, NFC/eSE, UWB, tek tuş kilidi ve sanal 5G/radyo paketlerini `pm uninstall --user 0` ile ColorOS kullanıcısından kaldırır; devre dışı bırakma veya bind-mount gizleme kullanmaz. IMS, RIL, APN, CarrierConfig, Telefon ve SIM paketleri korunur; modem ve operatör destekliyorsa LTE-A (4.5G) doğal biçimde çalışır.
 - Hızlı şarj voltajı veya akımı zorlanmaz. OneOS, A05 PMIC ile adaptörün host çekirdeğinde güvenle uzlaştığı şarj türü, akım ve voltaj üst sınırını okuyup günlüğe yazar; böylece farklı adaptörlerle güvenli çalışır.
+- PD/PPS/HVDCP algısı `sys.oneos.fast_charging` durumuna yansıtılır. Bu köprü yalnızca host çekirdeğinin sonucunu ColorOS oturumuna taşır; termal ve PMIC güvenlik sınırlarını değiştirmez.
 - Cihaz sensör servisinde ivmeölçer, ışık ve yakınlık sensörleri çalışıyor. Manyetometre bildirilmediği için pusula yönü bu cihaz/ROM birleşiminde yazılımla üretilemez.
 
 Bu klasör, açık kaynak [`fahadalijaved/OneOS`](../OneOS/README.md) projesini **Samsung Galaxy A05 (`SM-A055F`, MediaTek MT6768 / Helio G85, KernelSU, YAAP Android 17)** ortamına uyarlamak için hazırlanmış araçları ve yamaları içerir.

@@ -70,11 +70,20 @@ fi
          'if [ "${ONEOS_GUEST_WINGCAM:-0}" = 1 ] && [ -f "$WCAPK" ] && [ -d "$WCMP" ]')
     edit(prepare, '|| [ -f /system/priv-app/WingCam-N28/WingCam-N28.apk ]; }; then',
          '|| { [ "${ONEOS_GUEST_WINGCAM:-0}" = 1 ] && [ -f /system/priv-app/WingCam-N28/WingCam-N28.apk ]; }; }; then')
+    # SAMCAM also exists on custom-ROM hosts. Only use it to replace the Oplus
+    # camera on a real One UI host; ColorOS otherwise keeps its native camera.
+    edit(prepare,
+         '[ "$SAMCAM" = 1 ] || { [ "${ONEOS_GUEST_WINGCAM:-0}" = 1 ] && [ -f /system/priv-app/WingCam-N28/WingCam-N28.apk ]; }',
+         '{ [ "$SAMCAM" = 1 ] && [ -f /system/priv-app/imsservice/imsservice.apk ]; } || { [ "${ONEOS_GUEST_WINGCAM:-0}" = 1 ] && [ -f /system/priv-app/WingCam-N28/WingCam-N28.apk ]; }')
     edit(prepare, '''    # A copy installed from /data would shadow the system app.
     rm -rf "$STAGE"/data/app/*/com.sec.android.app.camera-* 2>/dev/null''',
          '''    # Preserve installed user cameras and Android's normal update precedence.''')
     edit(switch, '''# WingCam permissions.
-n=0;''', '''# Optional WingCam only; permissions cannot repair an attribution/ABI mismatch.
+n=0;''', '''# Remove a broken WingCam copy left by an older ColorOS session.
+if [ "${ONEOS_GUEST_WINGCAM:-0}" != 1 ]; then
+    G /system/bin/pm uninstall --user 0 com.sec.android.app.camera >/dev/null 2>&1 || true
+fi
+# Optional WingCam only; permissions cannot repair an attribution/ABI mismatch.
 if [ "${ONEOS_GUEST_WINGCAM:-0}" = 1 ]; then
 n=0;''')
     edit(switch, '''    echo "WingCam permissions granted"
@@ -89,7 +98,11 @@ MT=$(awk '/MemTotal/ {print $2}' /proc/meminfo)''', '''# Charging is negotiated 
 CHG_TYPE=$(cat /sys/class/power_supply/usb/real_type 2>/dev/null)
 CHG_CUR=$(cat /sys/class/power_supply/usb/current_max 2>/dev/null)
 CHG_VOLT=$(cat /sys/class/power_supply/usb/voltage_max 2>/dev/null)
-echo "charger: type=${CHG_TYPE:-unknown} current_max=${CHG_CUR:-unknown}uA voltage_max=${CHG_VOLT:-unknown}uV (host negotiated)"
+CHG_INPUT=$(cat /sys/class/power_supply/primary_chg/input_current_limit 2>/dev/null)
+CHG_NOW=$(cat /sys/class/power_supply/battery/current_now 2>/dev/null)
+case "$CHG_TYPE" in USB_PD|USB_PD_PPS|PD|PD_PPS|USB_HVDCP|USB_HVDCP_3) FAST=1 ;; *) FAST=0 ;; esac
+G /system/bin/setprop sys.oneos.fast_charging "$FAST"
+echo "charger: type=${CHG_TYPE:-unknown} current_max=${CHG_CUR:-unknown}uA voltage_max=${CHG_VOLT:-unknown}uV input_limit=${CHG_INPUT:-unknown}uA battery_current=${CHG_NOW:-unknown}uA fast=$FAST (host negotiated; no forced limits)"
 # RAM on 4 GB phones.
 MT=$(awk '/MemTotal/ {print $2}' /proc/meminfo)''')
     edit(MODEL + "CustomRom.kt", "Custom AOSP host (experimental YAAP mode)", "Custom Android host (experimental)")
