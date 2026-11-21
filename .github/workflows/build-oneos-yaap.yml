@@ -20,12 +20,12 @@ jobs:
         with:
           path: yaap
 
-      - name: Checkout upstream OneOS (0.5.32)
+      - name: Use repository-owned OneOS source snapshot
         run: |
-          git clone https://github.com/fahadalijaved/OneOS.git OneOS
-          cd OneOS
-          REF="${{ github.event.inputs.oneos_ref || 'v0.5.32' }}"
-          git checkout "$REF"
+          test -d yaap/OneOS-source/app-android
+          test -d yaap/OneOS-source/switcher
+          cp -a yaap/OneOS-source OneOS
+          echo "Building the source owned by AhmetBaki2131/OneOS-YAAP; no upstream checkout."
 
       - name: Apply custom-ROM patches for Galaxy A05 (SM-A055F)
         run: |
