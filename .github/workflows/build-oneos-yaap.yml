@@ -4,11 +4,6 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
-    inputs:
-      oneos_ref:
-        description: 'Upstream fahadalijaved/OneOS commit/ref (default: v0.5.32)'
-        required: false
-        default: 'v0.5.32'
 
 jobs:
   build-apk:
