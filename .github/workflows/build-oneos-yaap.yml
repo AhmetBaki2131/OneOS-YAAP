@@ -32,6 +32,8 @@ jobs:
           pwsh -NoProfile -File yaap/oneos_repo_patches/apply_yaap_patches.ps1 -OneOsRoot "$PWD/OneOS"
           python3 yaap/oneos_repo_patches/apply_multirom_patches.py --root "$PWD/OneOS" --check
           python3 yaap/oneos_repo_patches/apply_multirom_patches.py --root "$PWD/OneOS"
+          python3 yaap/oneos_repo_patches/apply_android15_16_17_compat.py --root "$PWD/OneOS" --check
+          python3 yaap/oneos_repo_patches/apply_android15_16_17_compat.py --root "$PWD/OneOS"
 
       - name: Setup JDK 21
         uses: actions/setup-java@v4
