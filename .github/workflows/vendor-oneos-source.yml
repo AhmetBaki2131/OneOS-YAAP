@@ -1,0 +1,47 @@
+name: Vendor OneOS 0.5.32 Source
+
+on:
+  push:
+    paths:
+      - .github/workflows/vendor-oneos-source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout personal repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Import the pinned OneOS source snapshot once
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d OneOS-source/app-android ] && [ -d OneOS-source/switcher ]; then
+            echo "OneOS-source is already owned by this repository; nothing to import."
+            exit 0
+          fi
+          git clone --depth 1 --branch v0.5.32 https://github.com/fahadalijaved/OneOS.git .oneos-import
+          rm -rf .oneos-import/.git
+          mv .oneos-import OneOS-source
+          printf '%s\n' \
+            'OneOS source snapshot: v0.5.32' \
+            'Imported once for an independent AhmetBaki2131/OneOS-YAAP build.' \
+            'Upstream changes are not pulled automatically.' > OneOS-source/ONEOS_SOURCE_SNAPSHOT.txt
+
+      - name: Commit the owned source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add OneOS-source
+          git diff --cached --quiet && exit 0
+          git commit -m "Vendor independent OneOS 0.5.32 source snapshot"
+          git push origin HEAD:main
+
