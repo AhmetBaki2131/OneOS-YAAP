@@ -1,4 +1,14 @@
-# OneOS YAAP Android 17 (SM-A055F / MT6768) Uyarlama Paketi
+# OneOS Custom ROM Android 17 (SM-A055F / MT6768) Uyarlama Paketi
+
+Bu dal YAAP ile sınırlı değildir. Android 17 tabanlı özel ROM ev sahiplerini ROM adına göre değil, gerçek `IInstalld` işlem tablosu ile kamera, sensör ve grafik HAL uyumluluğuna göre değerlendirir. YAAP, canlı doğrulamanın yapıldığı ev sahibi ROM'lardan biridir.
+
+## 2026-11-21 ColorOS 17 canlı doğrulaması
+
+- Kablosuz ADB ile `SM-A055F`, Android 17 / SDK 37 ve `720x1600 @ 300 dpi` doğrulandı.
+- Kamera HAL'i 5 aygıt bildiriyor. İsteğe bağlı WingCam aktarımı ColorOS'ta AppOps'a paket yerine `paket/aktivite` gönderdiği için `CAMERA_DISABLED` oluyor; bu aktarım artık varsayılan olarak kapalıdır (`ONEOS_GUEST_WINGCAM=1` ile deneysel olarak açılabilir).
+- Çentik yolu ile Oplus ekran deliği koordinatları ayrıldı. ColorOS'un 160 px üst boşluk bırakmasına yol açan yanlış format giderildi; A05 hedefi 58 px delik ve 66 px durum çubuğudur.
+- ColorOS Lite uygulama gizleme işlemi varsayılan olarak kapalıdır (`ONEOS_GUEST_COLOROS_LITE=1` ile açılır). Kullanıcının ekran zaman aşımı, uyku ve kamera uygulaması korunur.
+- Cihaz sensör servisinde ivmeölçer, ışık ve yakınlık sensörleri çalışıyor. Manyetometre bildirilmediği için pusula yönü bu cihaz/ROM birleşiminde yazılımla üretilemez.
 
 Bu klasör, açık kaynak [`fahadalijaved/OneOS`](../OneOS/README.md) projesini **Samsung Galaxy A05 (`SM-A055F`, MediaTek MT6768 / Helio G85, KernelSU, YAAP Android 17)** ortamına uyarlamak için hazırlanmış araçları ve yamaları içerir.
 
@@ -57,3 +67,4 @@ Bu klasör, açık kaynak [`fahadalijaved/OneOS`](../OneOS/README.md) projesini 
    ```powershell
    powershell -ExecutionPolicy Bypass -File "c:\Users\Baki\Desktop\New folder\OneOS-YAAP\oneos_repo_patches\apply_yaap_patches.ps1" -DryRun
    ```
+
