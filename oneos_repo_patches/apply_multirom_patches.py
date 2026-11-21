@@ -47,6 +47,31 @@ def transform(root):
         for kv in $CO_PERF; do''')
     edit(props, 'echo "guest_props: ColorOS Lite props set (sys.gcsupression.optimize.enable=false, dex2oat-threads=2, ANDR-PERF-CLIENT-SYS/UAH_CLIENT silenced)"',
          'echo "guest_props: ColorOS compatibility props: $CO_PERF (diagnostic logs retained)"')
+    # A05 has no NFC, UWB, IR blaster or 5G modem. Hide only optional ColorOS
+    # packages; keep shared telephony components because LTE data depends on them.
+    edit(prepare, '''    echo "ColorOS Lite optimization: hid $co_hid non-essential AI/Google/OEM/crashing service folders"
+fi
+# YAAP's Samsung camera''', '''    echo "ColorOS Lite optimization: hid $co_hid non-essential AI/Google/OEM/crashing service folders"
+fi
+if [ "${ONEOS_GUEST_A05_TRIM:-1}" = 1 ] &&
+   { [ -e "$ROOTFS/system/framework/oplus-services.jar" ] || [ -e "$GUEST_SYSTEM_EXT/framework/oplus-services.jar" ]; } &&
+   case "$(getprop ro.product.device)$(getprop ro.product.vendor.device)" in *a05m*) true ;; *) false ;; esac; then
+    a05_hid=0
+    for d in \
+        "$STAGE/data/app/ConsumerIRApp" "$STAGE/data/app/FinShellPay" "$STAGE/data/app/OneKeyLockScreen" \
+        "$ROOTFS/my_product/app/GPay3" "$ROOTFS/my_product/app/GoogleWallet" \
+        "$ROOTFS/my_product/priv-app/RemoteControl" \
+        "$ROOTFS/my_stock/app/KeKePay" "$ROOTFS/my_stock/app/SecurePay" \
+        "$ROOTFS/system/priv-app/NfcNci" "$GUEST_SYSTEM_EXT/app/NfcEngineerTest" \
+        "$GUEST_SYSTEM_EXT/priv-app/OplusNearComm" "$GUEST_SYSTEM_EXT/priv-app/OplusVirtualComm" \
+        "$GUEST_SYSTEM_EXT/priv-app/VirtualCommService" \
+        "$GUEST_SYSTEM_EXT/app/NetworkAssistSys_plugin_CellularVirtualData"; do
+        [ -d "$d" ] && [ ! -L "$d" ] || continue
+        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && a05_hid=$((a05_hid + 1))
+    done
+    echo "A05 ColorOS trim: hid $a05_hid optional IR, wallet/NFC, one-key and virtual-radio packages (LTE telephony kept)"
+fi
+# YAAP's Samsung camera''')
     # WingCam passes a component name to AppOps on ColorOS (live A05 evidence).
     edit(prepare, 'if [ -f "$WCAPK" ] && [ -d "$WCMP" ]',
          'if [ "${ONEOS_GUEST_WINGCAM:-0}" = 1 ] && [ -f "$WCAPK" ] && [ -d "$WCMP" ]')
@@ -65,6 +90,15 @@ fi
 fi
 fi
 # SD card:''')
+    edit(switch, '''# RAM on 4 GB phones.
+MT=$(awk '/MemTotal/ {print $2}' /proc/meminfo)''', '''# Charging is negotiated by the host kernel. Report the negotiated profile and
+# never force voltage/current beyond what the charger and A05 PMIC advertise.
+CHG_TYPE=$(cat /sys/class/power_supply/usb/real_type 2>/dev/null)
+CHG_CUR=$(cat /sys/class/power_supply/usb/current_max 2>/dev/null)
+CHG_VOLT=$(cat /sys/class/power_supply/usb/voltage_max 2>/dev/null)
+echo "charger: type=${CHG_TYPE:-unknown} current_max=${CHG_CUR:-unknown}uA voltage_max=${CHG_VOLT:-unknown}uV (host negotiated)"
+# RAM on 4 GB phones.
+MT=$(awk '/MemTotal/ {print $2}' /proc/meminfo)''')
     edit(MODEL + "CustomRom.kt", "Custom AOSP host (experimental YAAP mode)", "Custom Android host (experimental)")
     edit(MODEL + "CustomRom.kt", "Switching requires YAAP-matched host_installd and HAL checks.",
          "Switching requires a verified host installd table and compatible camera, sensor and graphics HALs.")

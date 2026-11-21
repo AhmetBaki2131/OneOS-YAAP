@@ -74,15 +74,6 @@ jobs:
           ./gradlew :app:assembleFullDebug --console=plain
           ls -lh app/build/outputs/apk/full/debug/
 
-      - name: Run root script & installd tests
-        working-directory: OneOS/app-android
-        continue-on-error: true
-        env:
-          GH_PACKAGES_USER: ${{ github.repository_owner }}
-          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-        run: |
-          ./gradlew :core:root:test :core:safety:test --console=plain
-
       - name: Upload APKs as Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -91,4 +82,14 @@ jobs:
             OneOS/app-android/app/build/outputs/apk/full/debug/app-full-debug.apk
             OneOS/app-android/guest/build/outputs/apk/debug/guest-debug.apk
           if-no-files-found: error
+
+      - name: Run root script & installd tests
+        working-directory: OneOS/app-android
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          GH_PACKAGES_USER: ${{ github.repository_owner }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          ./gradlew :core:root:test :core:safety:test --console=plain
 

@@ -9,7 +9,8 @@ GitHub Actions derlemesi güncel kararlı upstream `OneOS 0.5.32` (`v0.5.32`) s�
 - Kablosuz ADB ile `SM-A055F`, Android 17 / SDK 37 ve `720x1600 @ 300 dpi` doğrulandı.
 - Kamera HAL'i 5 aygıt bildiriyor. İsteğe bağlı WingCam aktarımı ColorOS'ta AppOps'a paket yerine `paket/aktivite` gönderdiği için `CAMERA_DISABLED` oluyor; bu aktarım artık varsayılan olarak kapalıdır (`ONEOS_GUEST_WINGCAM=1` ile deneysel olarak açılabilir).
 - Çentik yolu ile Oplus ekran deliği koordinatları ayrıldı. ColorOS'un 160 px üst boşluk bırakmasına yol açan yanlış format giderildi; A05 hedefi 58 px delik ve 66 px durum çubuğudur.
-- ColorOS Lite uygulama gizleme işlemi varsayılan olarak kapalıdır (`ONEOS_GUEST_COLOROS_LITE=1` ile açılır). Kullanıcının ekran zaman aşımı, uyku ve kamera uygulaması korunur.
+- Genel ColorOS Lite gizleme işlemi isteğe bağlıdır (`ONEOS_GUEST_COLOROS_LITE=1`). A05'e özel sadeleştirme ise varsayılan açıktır (`ONEOS_GUEST_A05_TRIM=0` ile kapatılabilir): IR kumanda, cüzdan/ödeme, NFC, tek tuş kilidi ve sanal 5G/radyo uygulamaları oturumluk salt-okunur bağlarla gizlenir; LTE telefon ve mobil veri bileşenleri korunur.
+- Hızlı şarj voltajı veya akımı zorlanmaz. OneOS, A05 PMIC ile adaptörün host çekirdeğinde güvenle uzlaştığı şarj türü, akım ve voltaj üst sınırını okuyup günlüğe yazar; böylece farklı adaptörlerle güvenli çalışır.
 - Cihaz sensör servisinde ivmeölçer, ışık ve yakınlık sensörleri çalışıyor. Manyetometre bildirilmediği için pusula yönü bu cihaz/ROM birleşiminde yazılımla üretilemez.
 
 Bu klasör, açık kaynak [`fahadalijaved/OneOS`](../OneOS/README.md) projesini **Samsung Galaxy A05 (`SM-A055F`, MediaTek MT6768 / Helio G85, KernelSU, YAAP Android 17)** ortamına uyarlamak için hazırlanmış araçları ve yamaları içerir.
