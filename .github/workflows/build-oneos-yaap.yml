@@ -57,6 +57,25 @@ jobs:
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Audit A05 IInstalld ABI offline
+        run: |
+          python3 -m unittest discover -s yaap/scripts -p 'test_audit_installd_abi.py' -v
+          python3 yaap/scripts/audit_installd_abi.py \
+            --reference OneOS/switcher/patches/host_installd.txt \
+            --host yaap/probe_results/host_installd_yaap.txt \
+            --guest-sdk 37 --host-sdk 37 --json > "$RUNNER_TEMP/a05-instald-abi.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads((Path(os.environ['RUNNER_TEMP']) / "a05-instald-abi.json").read_text())
+          assert report["direct"] == 25, report
+          assert report["code_shifts"] == 2, report
+          assert report["missing"] == report["signature_mismatches"] == 0, report
+          assert report["launch_verified"] is False
+          print("A05 ABI audit OK: 25 direct calls, 2 fsverity shifts")
+          PY
+
       - name: Test Android 15-17 host compatibility gates
         working-directory: OneOS/app-android
         run: |
