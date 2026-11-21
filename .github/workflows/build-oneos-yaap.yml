@@ -90,6 +90,28 @@ jobs:
           chmod +x gradlew
           ./gradlew :core:model:test --tests "*AndroidHostMatrixTest" --console=plain
 
+      - name: Audit read-only root lists, script safety, and LF line endings
+        working-directory: OneOS/app-android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          bad = []
+          for base in (
+              Path("app/src/main/assets/probe"),
+              Path("app/src/full/assets/root"),
+              Path("app/src/full/assets/logs"),
+              Path("../switcher/assets"),
+          ):
+              if not base.exists():
+                  continue
+              for p in base.rglob("*"):
+                  if p.suffix in (".sh", ".list") and b"\r" in p.read_bytes():
+                      bad.append(str(p))
+          assert not bad, f"CRLF found in shell/list assets: {bad}"
+          print("LF line ending check OK")
+          PY
+          ./gradlew :core:root:test --tests "*ReadOnlyListsTest" --tests "*StageAuditTest" --tests "*EditionsTest" --console=plain
+
       - name: Build guest manager APK and stage it
         working-directory: OneOS/app-android
         env:
@@ -110,13 +132,31 @@ jobs:
           ./gradlew :app:assembleFullDebug --console=plain
           ls -lh app/build/outputs/apk/full/debug/
 
+      - name: Build root-required English OneOS Probe APK (includes checkProbeDebugApk)
+        working-directory: OneOS/app-android
+        env:
+          GH_PACKAGES_USER: ${{ github.repository_owner }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          ./gradlew :app:assembleProbeDebug --console=plain
+          ls -lh app/build/outputs/apk/probe/debug/
+
       - name: Upload APKs as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: OneOS-CustomROM-A05-APKs
           path: |
             OneOS/app-android/app/build/outputs/apk/full/debug/app-full-debug.apk
+            OneOS/app-android/app/build/outputs/apk/probe/debug/app-probe-debug.apk
             OneOS/app-android/guest/build/outputs/apk/debug/guest-debug.apk
+          if-no-files-found: error
+
+      - name: Upload OneOS Probe Device Report APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneOS-Probe-DeviceReport-APK
+          path: |
+            OneOS/app-android/app/build/outputs/apk/probe/debug/app-probe-debug.apk
           if-no-files-found: error
 
       - name: Run root script & installd tests
