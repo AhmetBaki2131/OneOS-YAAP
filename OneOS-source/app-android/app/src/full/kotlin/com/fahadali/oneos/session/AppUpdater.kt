@@ -1,6 +1,8 @@
 package com.fahadali.oneos.session
 
 import android.app.PendingIntent
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -84,7 +86,7 @@ object AppUpdater : BackgroundJob<AppUpdater.State>(State(), "oneos-update") {
             OldStagesJob.state.busy || RemoveJob.state.busy
 
     /** Reads update.json unless it was read in the last hours ([force]: now). */
-    fun check(ctx: Context, force: Boolean = false) {
+    fun check(ctx: Context, force: Boolean = false, autoInstall: Boolean = false) {
         if (state.busy) return
         val app = ctx.applicationContext
         val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -104,11 +106,33 @@ object AppUpdater : BackgroundJob<AppUpdater.State>(State(), "oneos-update") {
                     else -> State(Phase.CURRENT, u)
                 },
             )
+            if (u != null && u.newerThan(BuildConfig.VERSION_CODE)) {
+                notifyAvailable(app, u)
+                if (autoInstall) install(app)
+            }
             // The APK an earlier update installed stayed in files/oneos-update (0.4.44): only the
             // update on offer is kept (its part, to resume, or its download, checked again before use).
             val keep = u?.takeIf { it.newerThan(BuildConfig.VERSION_CODE) }?.let { setOf("OneOS-${it.versionCode}.part", APK) }.orEmpty()
             dir(app).listFiles()?.filter { it.name !in keep }?.forEach { it.delete() }
         }
+    }
+
+    private fun notifyAvailable(ctx: Context, u: AppUpdate) {
+        val manager = ctx.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel("oneos-updates", "OneOS updates", NotificationManager.IMPORTANCE_HIGH),
+        )
+        val open = Intent(ctx, com.fahadali.oneos.ui.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val pending = PendingIntent.getActivity(ctx, 731, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notification = android.app.Notification.Builder(ctx, "oneos-updates")
+            .setSmallIcon(ctx.applicationInfo.icon)
+            .setContentTitle("New OneOS version: ${u.versionName}")
+            .setContentText(u.notes ?: "The verified update will be installed automatically.")
+            .setContentIntent(pending)
+            .setAutoCancel(true)
+            .build()
+        runCatching { manager.notify(731, notification) }
     }
 
     fun canInstall(): Boolean =

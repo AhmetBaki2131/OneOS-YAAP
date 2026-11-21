@@ -60,15 +60,24 @@ f="$S/files.sha256"
 [ -f "$f" ] || exit 3
 cat "$f"'
 
-#: SHA-256 of every file at the top of the stage except the 10 GB image, and of the root script.
+#: SHA-256 of the immutable files recorded by the stage itself, and of the root script.
+#: Dynamic session logs and diagnostics are intentionally not hashed: on slower A05 storage they
+#: made the pre-update check exceed its deadline even though none of those files is installed.
 run stage.hashes 120 stage/hashes.txt '
 S=/data/local/tmp/oneos
 [ -e "$S" ] || [ -L "$S" ] || [ ! -d /data/local/tmp/lineage_stage ] || [ -L /data/local/tmp/lineage_stage ] || S=/data/local/tmp/lineage_stage
 [ -d "$S" ] || exit 3
-for f in "$S"/* "$S"/bin/oneos_root.sh; do
-  [ -f "$f" ] || continue
-  [ -L "$f" ] && continue
-  [ "$f" = "$S/system.raw" ] && continue
+list="$S/files.sha256"
+[ -f "$list" ] || exit 3
+while read expected name extra; do
+  [ -n "$expected" ] && [ -n "$name" ] && [ -z "$extra" ] || exit 4
+  case "$name" in */*|.*|*..*) exit 4;; esac
+  f="$S/$name"
+  [ -f "$f" ] && [ ! -L "$f" ] || exit 5
+  sha256sum "$f"
+done < "$list"
+for f in "$S/bin/oneos_root.sh"; do
+  [ -f "$f" ] && [ ! -L "$f" ] || exit 5
   sha256sum "$f"
 done
 true'
