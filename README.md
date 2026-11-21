@@ -1,4 +1,17 @@
-# OneOS Custom ROM Android 17 (SM-A055F / MT6768) Uyarlama Paketi
+# OneOS Custom ROM Android 15–17 (SM-A055F / MT6768) Uyarlama Paketi
+
+## Android 15 / 16 / 17 host compatibility (experimental)
+
+The GitHub Actions build applies `oneos_repo_patches/apply_android15_16_17_compat.py` after the existing Samsung A05 and multi-ROM patches. Android 15 (API 35), Android 16 (API 36), and Android 17 (API 37) hosts can run preflight diagnostics. On Android 15/16, an **Android 17 ColorOS image can be examined/prepared only**, not launched: an Android guest shares the host's system services and its framework/installd ABI must match.
+
+| Host Android | Host API | ColorOS 17 guest | Same-API verified guest |
+| --- | --- | --- | --- |
+| Android 15 | 35 | Prepare-only; switch blocked | Not supplied; SDK 35 installd bridge still required |
+| Android 16 | 36 | Prepare-only; switch blocked | Existing SDK 36 guest path retains its checks |
+| Android 17 | 37 | Existing switching checks apply | Existing SDK 37 guest path retains its checks |
+
+**Not a ColorOS 17 Android 15/16 backport.** This patch preserves the hard block at Switch for mismatched SDKs and requires a validated SDK 35 guest image, package set, proxy and matching HALs to enable Android 15 switching. The APK's `minSdk = 31` was already below Android 15; `compileSdk = 37` is not a minimum host-OS requirement.
+
 
 Bu dal YAAP ile sınırlı değildir. Android 17 tabanlı özel ROM ev sahiplerini ROM adına göre değil, gerçek `IInstalld` işlem tablosu ile kamera, sensör ve grafik HAL uyumluluğuna göre değerlendirir. YAAP, canlı doğrulamanın yapıldığı ev sahibi ROM'lardan biridir.
 
