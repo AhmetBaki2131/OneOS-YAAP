@@ -34,6 +34,7 @@ jobs:
           python3 yaap/oneos_repo_patches/apply_multirom_patches.py --root "$PWD/OneOS"
           python3 yaap/oneos_repo_patches/apply_android15_16_17_compat.py --root "$PWD/OneOS" --check
           python3 yaap/oneos_repo_patches/apply_android15_16_17_compat.py --root "$PWD/OneOS"
+          cp yaap/oneos_repo_patches/AndroidHostMatrixTest.kt OneOS/app-android/core/model/src/test/kotlin/com/fahadali/oneos/core/model/AndroidHostMatrixTest.kt
 
       - name: Setup JDK 21
         uses: actions/setup-java@v4
@@ -55,6 +56,12 @@ jobs:
 
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Test Android 15-17 host compatibility gates
+        working-directory: OneOS/app-android
+        run: |
+          chmod +x gradlew
+          ./gradlew :core:model:test --tests "*AndroidHostMatrixTest" --console=plain
 
       - name: Build guest manager APK and stage it
         working-directory: OneOS/app-android
