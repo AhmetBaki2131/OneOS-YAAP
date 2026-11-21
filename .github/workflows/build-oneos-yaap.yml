@@ -64,6 +64,10 @@ jobs:
             --reference OneOS/switcher/patches/host_installd.txt \
             --host yaap/probe_results/host_installd_yaap.txt \
             --guest-sdk 37 --host-sdk 37 --json > "$RUNNER_TEMP/a05-instald-abi.json"
+          python3 yaap/scripts/audit_installd_abi.py \
+            --reference OneOS/switcher/patches/host_installd.txt \
+            --host OneOS/switcher/patches/host_installd_a16.txt \
+            --guest-sdk 37 --host-sdk 36 --json > "$RUNNER_TEMP/oneui8-vs-coloros17-reference.json"
           python3 - <<'PY'
           import json
           import os
@@ -75,6 +79,15 @@ jobs:
           assert report["launch_verified"] is False
           print("A05 ABI audit OK: 25 direct calls, 2 fsverity shifts")
           PY
+
+      - name: Upload IInstalld ABI reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneOS-ABI-Reference-Reports
+          path: |
+            ${{ runner.temp }}/a05-instald-abi.json
+            ${{ runner.temp }}/oneui8-vs-coloros17-reference.json
+          if-no-files-found: error
 
       - name: Test Android 15-17 host compatibility gates
         working-directory: OneOS/app-android
