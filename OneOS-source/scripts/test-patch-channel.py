@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""Exercise release preparation without network or publishing."""
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+import shutil
+
+spec = importlib.util.spec_from_file_location('publisher', Path(__file__).with_name('release-patch-channel.py'))
+publisher = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(publisher)
+
+
+class ChannelPublisherTests(unittest.TestCase):
+    def test_override_is_hashed_and_uses_only_the_fork(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); inputs = root / 'inputs'; inputs.mkdir()
+            payload = inputs / 'Fold8SystemUI.apk'; payload.write_bytes(b'fixture')
+            manifest = publisher.prepare('n6-global-f8', 'fixture-1', inputs, root / 'release')
+            data = json.loads(manifest.read_text())
+            entry = next(f for f in data['files'] if f['name'] == payload.name)
+            self.assertEqual(hashlib.sha256(b'fixture').hexdigest(), entry['sha256'])
+            self.assertEqual('gh:thatjoshguy67/OneOS-files:fold8-experimental', entry['source'])
+            self.assertEqual(b'fixture', (manifest.parent / entry['sha256']).read_bytes())
+
+    def test_guarded_payloads_and_their_guards_stay_the_apps(self):
+        for name in ('services_patched.jar', 'vold_patched', 'guards.txt', 'samcam.tar', 'Fold8AngleRelay.dex'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); inputs = root / 'inputs'; inputs.mkdir()
+                (inputs / name).write_bytes(b'new guarded fixture')
+                with self.assertRaises(ValueError):
+                    publisher.prepare('n6-global-f8', 'fixture-2', inputs, root / 'release')
+                self.assertFalse((root / 'release').exists())
+
+    def test_rejects_new_scripts_and_bad_guard_lists(self):
+        for name, content in [('guest_prepare.sh', b'new script'), ('guards.txt', b'bad guards')]:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); inputs = root / 'inputs'; inputs.mkdir()
+                (inputs / name).write_bytes(content)
+                with self.assertRaises((ValueError, KeyError)):
+                    publisher.prepare('n6-global-f8', 'fixture-3', inputs, root / 'release')
+
+    def test_second_contributor_and_shared_device_sets_use_the_same_publisher(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            packages = root / 'app-android/packages'
+            shutil.copytree(publisher.ROOT / 'app-android/packages', packages)
+            registry = packages / 'patch-sources.json'
+            catalog = json.loads(registry.read_text())
+            image_hash = catalog['contributors'][0]['targets'][0]['imageSha256']
+            catalog['contributors'].append(dict(id='another-contributor', label='Another contributor',
+                repository='another-contributor/patches', tag='testing', targets=[
+                    dict(profile=profile, image='coloros17-findn6', set='n6-f8u', imageSha256=image_hash)
+                    for profile in ('f7', 'f8u')]))
+            registry.write_text(json.dumps(catalog))
+            inputs = root / 'inputs'; inputs.mkdir()
+            (inputs / 'Fold8SystemUI.apk').write_bytes(b'another device fixture')
+            with patch.object(publisher, 'ROOT', root):
+                with self.assertRaises(ValueError):
+                    publisher.prepare('n6-f8u', 'other-1', inputs, root / 'ambiguous', 'another-contributor')
+                manifest = publisher.prepare('n6-f8u', 'other-1', inputs, root / 'release', 'another-contributor', 'f7')
+            data = json.loads(manifest.read_text())
+            self.assertEqual('f7-n6-f8u.json', manifest.name)
+            self.assertEqual('f7', data['profile'])
+            entry = next(f for f in data['files'] if f['name'] == 'Fold8SystemUI.apk')
+            self.assertEqual('gh:another-contributor/patches:testing', entry['source'])
+
+    def test_discovery_publishes_supported_os_without_embedded_target(self):
+        config = dict(publisher.source_config('that-josh-guy'), discover=True, targets=[])
+        with tempfile.TemporaryDirectory() as tmp, patch.object(publisher, 'source_config', return_value=config):
+            root = Path(tmp); inputs=root/'inputs'; inputs.mkdir()
+            manifest=publisher.prepare('lineage','dynamic-1',inputs,root/'release',profile='f8')
+            data=json.loads(manifest.read_text())
+            self.assertEqual('f8-lineage.json',manifest.name)
+            self.assertEqual('f1ce7c1add2dae73c681b29ccb86068864d5f42886bc1c22d249891f3bdf6261',data['imageSha256'])
+            infinity=publisher.prepare('infinityx','dynamic-infinity',inputs,root/'infinity',profile='f8')
+            infinity_data=json.loads(infinity.read_text())
+            self.assertEqual('f8-infinityx.json',infinity.name)
+            self.assertEqual('899ce57a069959b6463263074f35e5aadadeb7bb46f0c0a756d2ba64168545e2',infinity_data['imageSha256'])
+            with self.assertRaises(ValueError):
+                publisher.prepare('lineage','wrong-device',inputs,root/'bad',profile='unknown')
+
+
+if __name__ == '__main__':
+    unittest.main()

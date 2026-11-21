@@ -1,0 +1,3 @@
+OneOS source snapshot: v0.5.32
+Imported once for an independent AhmetBaki2131/OneOS-YAAP build.
+Upstream changes are not pulled automatically.
