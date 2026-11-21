@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$OneOsRoot = "c:\Users\Baki\Desktop\New folder\OneOS",
     [switch]$DryRun
 )
@@ -155,13 +155,9 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Profiles.kt" `
 @'
-    val S_PLUS_8650 = S_8650.copy(id = ID_S_PLUS_8650, label = "Galaxy S24+", modelPrefix = "SM-S926", codename = "e2q")
-
     val BUILT_IN: List<PhoneProfile> = listOf(
 '@ `
 @'
-    val S_PLUS_8650 = S_8650.copy(id = ID_S_PLUS_8650, label = "Galaxy S24+", modelPrefix = "SM-S926", codename = "e2q")
-
     /**
      * Galaxy A05 (SM-A055F, codename a05m, MediaTek MT6769V/CZ -> MT6768 Helio G85,
      * verified 2026-11-18: YAAP Android 17, vendor API 34, kernel 6.6.144, composer3 AIDL,
@@ -184,11 +180,9 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Profiles.kt" `
 @'
         A55, S25_FE, S_8450, M55S, S_ULTRA_8450_JP, S_PLUS_9945, S_ULTRA_8550_JP, S_9925, A16_MTK, S_8550_JP, M35, A15_5G, S_PLUS_8650,
-    )
 '@ `
 @'
         A55, S25_FE, S_8450, M55S, S_ULTRA_8450_JP, S_PLUS_9945, S_ULTRA_8550_JP, S_9925, A16_MTK, S_8550_JP, M35, A15_5G, S_PLUS_8650, A05,
-    )
 '@ "Profiles.kt BUILT_IN list"
 
 # 4. ApkSeries.kt: register ID_A05 in S25 series
@@ -562,11 +556,11 @@ Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 @'
     if [ "$(image_sdk "$2")" = 36 ]; then carried=$INSTALLD_SHA_36 ok=$INSTALLD_OK_36
-    else carried=$INSTALLD_SHA ok=$INSTALLD_SHA; fi
+    else carried=$INSTALLD_SHA ok=$INSTALLD_SHA
 '@ `
 @'
     if [ "$(image_sdk "$2")" = 36 ]; then carried=$INSTALLD_SHA_36 ok=$INSTALLD_OK_36
-    else carried=$INSTALLD_SHA ok="$INSTALLD_SHA $INSTALLD_SHA_YAAP"; fi
+    else carried=$INSTALLD_SHA ok="$INSTALLD_SHA $INSTALLD_SHA_YAAP"
 '@ "oneos_root.sh check_table YAAP ok"
 
 Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
@@ -1130,3 +1124,4 @@ Replace-Exact "switcher\assets\oneos_switch.sh" `
 '@ "oneos_switch.sh launch fixes script"
 
 Write-Host "Done."
+

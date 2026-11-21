@@ -2,6 +2,8 @@
 
 Bu dal YAAP ile sınırlı değildir. Android 17 tabanlı özel ROM ev sahiplerini ROM adına göre değil, gerçek `IInstalld` işlem tablosu ile kamera, sensör ve grafik HAL uyumluluğuna göre değerlendirir. YAAP, canlı doğrulamanın yapıldığı ev sahibi ROM'lardan biridir.
 
+GitHub Actions derlemesi güncel kararlı upstream `OneOS 0.5.32` (`v0.5.32`) sürümünü temel alır.
+
 ## 2026-11-21 ColorOS 17 canlı doğrulaması
 
 - Kablosuz ADB ile `SM-A055F`, Android 17 / SDK 37 ve `720x1600 @ 300 dpi` doğrulandı.

@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       oneos_ref:
-        description: 'Upstream fahadalijaved/OneOS commit/ref (default: 0.5.19)'
+        description: 'Upstream fahadalijaved/OneOS commit/ref (default: v0.5.32)'
         required: false
-        default: 'ac5abc5782c832a8fcace65f66315bc4a92cc940'
+        default: 'v0.5.32'
 
 jobs:
   build-apk:
@@ -20,11 +20,11 @@ jobs:
         with:
           path: yaap
 
-      - name: Checkout upstream OneOS (0.5.19)
+      - name: Checkout upstream OneOS (0.5.32)
         run: |
           git clone https://github.com/fahadalijaved/OneOS.git OneOS
           cd OneOS
-          REF="${{ github.event.inputs.oneos_ref || 'ac5abc5782c832a8fcace65f66315bc4a92cc940' }}"
+          REF="${{ github.event.inputs.oneos_ref || 'v0.5.32' }}"
           git checkout "$REF"
 
       - name: Apply custom-ROM patches for Galaxy A05 (SM-A055F)
