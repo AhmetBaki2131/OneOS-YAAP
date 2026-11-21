@@ -10,12 +10,22 @@ import org.junit.Test
  * stock One UI and custom ROMs (LineageOS, crDroid, EvolutionX, PixelOS, YAAP, One UI ports, GSIs).
  */
 class AndroidHostMatrixTest {
+    private val GRANTED_ROOT = RootSignals(
+        managerPackages = listOf("me.weishu.kernelsu"),
+        probe = SuProbeResult(
+            SuState.GRANTED,
+            0,
+            "u:r:ksu:s0",
+            "uid=0(root) gid=0(root) groups=0(root) context=u:r:ksu:s0",
+        ),
+    )
+
     private fun report(
         sdk: Int,
         phase: GatePhase,
         profile: PhoneProfile = Profiles.S_ULTRA_8850,
         image: ImageRef = Images.FIND_X9U_IN_1105,
-        facts: DeviceFacts = Fixtures.s26Ultra().copy(
+        facts: DeviceFacts = Fixtures.s26Ultra(root = GRANTED_ROOT).copy(
             sdk = sdk,
             androidRelease = AndroidRelease.name(sdk),
         ),
@@ -54,15 +64,15 @@ class AndroidHostMatrixTest {
         vendorModel: String = "SM-A055F",
         oneUiRaw: String = "",
         bootloader: String = "A055FXXU6CXI1",
-    ): DeviceFacts = Fixtures.s26Ultra().let { base ->
+    ): DeviceFacts = Fixtures.s26Ultra(root = GRANTED_ROOT).let { base ->
         base.copy(
             model = model,
             device = "a05m",
-            soc = base.soc.copy(model = "MT6768", marketingName = "MediaTek Helio G85"),
+            soc = SocInfo(SocVendor.MEDIATEK, "MT6768", "mt6768", "MediaTek Helio G85"),
             oneUiRaw = oneUiRaw,
             sdk = sdk,
             androidRelease = AndroidRelease.name(sdk),
-            form = FormResult(FormFactor.BAR, listOf("test")),
+            form = FormResult(FormFactor.BAR, FormFactor.BAR, false, null, false, listOf("test")),
             bootloader = bootloader,
             vendorModel = vendorModel,
         )
