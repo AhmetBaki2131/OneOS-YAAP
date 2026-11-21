@@ -4,7 +4,6 @@ import android.content.Context
 import com.fahadali.oneos.core.model.Hashes
 import com.fahadali.oneos.core.model.InstalldDerivation
 import com.fahadali.oneos.core.model.InstalldExpected
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -17,18 +16,22 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 /**
- * Remaps OneOS's OneOSInstalldProxy fsverity transaction codes on YAAP Android 17 hosts:
- *   createFsveritySetupAuthToken: 53 (0x35) -> 52 (0x34)
- *   enableFsverity:               54 (0x36) -> 53 (0x35)
+ * Dynamically remaps OneOSInstalldProxy transaction codes when a custom ROM's host IInstalld
+ * differs from the carried One UI table.
  *
- * All 25 remaining ALLOWED IInstalld methods (slots 1..51) match SM-A055F YAAP 17 identically.
+ * Sets from OneOS 0.5.28+ carrying [OneOSInstalldCodes] resolve every host transaction code at
+ * runtime from `/data/system/oneos_installd_codes`, so they need no DEX patch and are returned
+ * untouched. Older/SDK-36 sets (such as `oxygen16`) still bake `const/16` codes into
+ * `OneOSInstalldProxy` and are remapped per host table hash.
  */
 object YaapInstalldDexPatcher {
 
-    private val REMAP = mapOf(
+    private val LEGACY_YAAP_REMAP = mapOf(
         "createFsveritySetupAuthToken" to (53 to 52),
         "enableFsverity" to (54 to 53),
     )
+
+    private const val RUNTIME_CODES_CLASS = "Lcom/android/server/pm/OneOSInstalldCodes;"
 
     private val DALVIK_OP_WIDTHS = intArrayOf(
         1, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 1, 1, // 0x00..0x0f
@@ -56,11 +59,24 @@ object YaapInstalldDexPatcher {
     fun cachedFile(ctx: Context, sha256: String, bytes: Long): File? =
         File(dir(ctx), sha256).takeIf { it.isFile && it.length() == bytes }
 
-    fun cachedMeta(ctx: Context, origSha256: String): PatchedRef? =
-        readMeta(ctx, "meta_$origSha256")
+    private fun svcMetaName(origSha256: String, hostKey: String?): String =
+        if (hostKey.isNullOrEmpty()) "meta_$origSha256" else "meta_${origSha256}_$hostKey"
 
-    fun cachedGuardsMeta(ctx: Context, origGuardsSha256: String, origSvcSha256: String): PatchedRef? =
-        readMeta(ctx, "gmeta_${origGuardsSha256}_${origSvcSha256}")
+    private fun guardsMetaName(origGuardsSha256: String, origSvcSha256: String, hostKey: String?): String =
+        if (hostKey.isNullOrEmpty()) "gmeta_${origGuardsSha256}_${origSvcSha256}" else "gmeta_${origGuardsSha256}_${origSvcSha256}_$hostKey"
+
+    fun cachedMeta(ctx: Context, origSha256: String, hostKey: String? = null): PatchedRef? =
+        readMeta(ctx, svcMetaName(origSha256, hostKey))
+            ?: if (hostKey != null) readMeta(ctx, svcMetaName(origSha256, null)) else null
+
+    fun cachedGuardsMeta(
+        ctx: Context,
+        origGuardsSha256: String,
+        origSvcSha256: String,
+        hostKey: String? = null,
+    ): PatchedRef? =
+        readMeta(ctx, guardsMetaName(origGuardsSha256, origSvcSha256, hostKey))
+            ?: if (hostKey != null) readMeta(ctx, guardsMetaName(origGuardsSha256, origSvcSha256, null)) else null
 
     private fun readMeta(ctx: Context, metaName: String): PatchedRef? {
         val meta = File(dir(ctx), metaName)
@@ -77,13 +93,20 @@ object YaapInstalldDexPatcher {
         ctx: Context,
         files: List<AppAssets.Staged>,
         derivation: InstalldDerivation?,
+        sdk: Int = 37,
     ): List<AppAssets.Staged> {
-        if (!InstalldExpected.needsYaapFsverityPatch(derivation)) return files
+        if (!InstalldExpected.needsCustomRomRemap(derivation, sdk)) return files
         val svc = files.firstOrNull { it.name == "services_patched.jar" } ?: return files
-        val svcRef = cachedMeta(ctx, svc.sha256) ?: buildPatchedJar(ctx, svc)
+        val hostKey = InstalldExpected.hostTableHash(derivation)?.take(16) ?: return files
+        val remap = InstalldExpected.customRomCodeRemap(derivation, sdk)
+        if (remap.isEmpty()) return files
+
+        val svcRef = cachedMeta(ctx, svc.sha256, hostKey) ?: buildPatchedJar(ctx, svc, hostKey, remap)
+            ?: return files
         val guards = files.firstOrNull { it.name == "guards.txt" }
         val guardsRef = guards?.let { g ->
-            cachedGuardsMeta(ctx, g.sha256, svc.sha256) ?: buildPatchedGuards(ctx, g, svc.sha256, svcRef.sha256)
+            cachedGuardsMeta(ctx, g.sha256, svc.sha256, hostKey)
+                ?: buildPatchedGuards(ctx, g, svc.sha256, svcRef.sha256, hostKey)
         }
         return files.map { f ->
             when {
@@ -99,44 +122,51 @@ object YaapInstalldDexPatcher {
         guards: AppAssets.Staged,
         origSvcSha: String,
         newSvcSha: String,
+        hostKey: String,
     ): PatchedRef {
         val outDir = dir(ctx)
         val raw = AppAssets.open(ctx, guards).use { it.readBytes() }.toString(Charsets.UTF_8)
         val re = Regex("(?m)^${Regex.escape(origSvcSha)}(\\s+services_patched\\.jar)\\r?$")
         val updated = re.replace(raw) { m -> "$newSvcSha${m.groupValues[1]}" }
         check(updated != raw) {
-            "YAAP guards.txt patcher did not find services_patched.jar hash $origSvcSha in guards.txt"
+            "Custom ROM guards.txt patcher did not find services_patched.jar hash $origSvcSha in guards.txt"
         }
         val outBytes = updated.toByteArray(Charsets.UTF_8)
         val sha = Hashes.sha256(outBytes)
         val finalFile = File(outDir, sha)
-        val tmpFile = File(outDir, "g_${guards.sha256}.tmp")
+        val tmpFile = File(outDir, "g_${guards.sha256}_$hostKey.tmp")
         try {
             tmpFile.writeBytes(outBytes)
             if (finalFile.exists()) finalFile.delete()
-            check(tmpFile.renameTo(finalFile)) { "Could not store YAAP-patched guards.txt" }
-            File(outDir, "gmeta_${guards.sha256}_${origSvcSha}").writeText("$sha ${outBytes.size}")
+            check(tmpFile.renameTo(finalFile)) { "Could not store remapped guards.txt" }
+            File(outDir, guardsMetaName(guards.sha256, origSvcSha, hostKey)).writeText("$sha ${outBytes.size}")
             return PatchedRef(sha, outBytes.size.toLong())
         } finally {
             tmpFile.delete()
         }
     }
 
-    private fun buildPatchedJar(ctx: Context, svc: AppAssets.Staged): PatchedRef {
+    private fun buildPatchedJar(
+        ctx: Context,
+        svc: AppAssets.Staged,
+        hostKey: String,
+        remap: Map<String, Pair<Int, Int>>,
+    ): PatchedRef? {
         val outDir = dir(ctx)
         val tmpSrc = File(outDir, "src_${svc.sha256}.jar")
-        val tmpDst = File(outDir, "dst_${svc.sha256}.jar")
+        val tmpDst = File(outDir, "dst_${svc.sha256}_$hostKey.jar")
         try {
             AppAssets.open(ctx, svc).use { input ->
                 FileOutputStream(tmpSrc).use { input.copyTo(it) }
             }
-            patchJarFile(tmpSrc, tmpDst)
+            if (usesRuntimeCodes(tmpSrc)) return null
+            patchJarFile(tmpSrc, tmpDst, remap)
             val bytes = tmpDst.length()
             val sha = Hashes.sha256(tmpDst.readBytes())
             val finalFile = File(outDir, sha)
             if (finalFile.exists()) finalFile.delete()
-            check(tmpDst.renameTo(finalFile)) { "Could not store YAAP-patched services jar" }
-            File(outDir, "meta_${svc.sha256}").writeText("$sha $bytes")
+            check(tmpDst.renameTo(finalFile)) { "Could not store remapped services_patched.jar" }
+            File(outDir, svcMetaName(svc.sha256, hostKey)).writeText("$sha $bytes")
             return PatchedRef(sha, bytes)
         } finally {
             tmpSrc.delete()
@@ -144,9 +174,45 @@ object YaapInstalldDexPatcher {
         }
     }
 
-    internal fun patchJarFile(srcJar: File, dstJar: File) {
-        var foundCreate = false
-        var foundEnable = false
+    internal fun usesRuntimeCodes(srcJar: File): Boolean {
+        ZipFile(srcJar).use { zin ->
+            val entries = zin.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                if (!entry.name.startsWith("classes") || !entry.name.endsWith(".dex")) continue
+                val bytes = zin.getInputStream(entry).use { it.readBytes() }
+                if (dexHasClass(bytes, RUNTIME_CODES_CLASS)) return true
+            }
+        }
+        return false
+    }
+
+    private fun dexHasClass(raw: ByteArray, descriptor: String): Boolean {
+        if (raw.size < 0x70 || String(raw, 0, 4, Charsets.US_ASCII) != "dex\n") return false
+        val buf = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN)
+        val stringIdsOff = buf.getInt(0x3c)
+        val typeIdsOff = buf.getInt(0x44)
+        val classDefsSize = buf.getInt(0x60)
+        val classDefsOff = buf.getInt(0x64)
+        for (i in 0 until classDefsSize) {
+            val cidx = buf.getInt(classDefsOff + i * 32)
+            val sidx = buf.getInt(typeIdsOff + cidx * 4)
+            var pos = buf.getInt(stringIdsOff + sidx * 4)
+            while (pos < raw.size && (raw[pos++].toInt() and 0x80) != 0) {
+                // skip uleb128 string length
+            }
+            var end = pos
+            while (end < raw.size && raw[end] != 0.toByte()) end++
+            if (String(raw, pos, end - pos, Charsets.UTF_8) == descriptor) return true
+        }
+        return false
+    }
+
+    internal fun patchJarFile(srcJar: File, dstJar: File) =
+        patchJarFile(srcJar, dstJar, LEGACY_YAAP_REMAP)
+
+    internal fun patchJarFile(srcJar: File, dstJar: File, remap: Map<String, Pair<Int, Int>>) {
+        val handled = mutableSetOf<String>()
         ZipFile(srcJar).use { zin ->
             ZipOutputStream(FileOutputStream(dstJar)).use { zout ->
                 val entries = zin.entries()
@@ -154,9 +220,8 @@ object YaapInstalldDexPatcher {
                     val entry = entries.nextElement()
                     val rawBytes = zin.getInputStream(entry).use { it.readBytes() }
                     val outBytes = if (entry.name.startsWith("classes") && entry.name.endsWith(".dex")) {
-                        val res = patchDexBytes(rawBytes)
-                        foundCreate = foundCreate || res.createHandled
-                        foundEnable = foundEnable || res.enableHandled
+                        val res = patchDexBytes(rawBytes, remap)
+                        handled += res.handled
                         res.bytes
                     } else {
                         rawBytes
@@ -179,18 +244,19 @@ object YaapInstalldDexPatcher {
                 }
             }
         }
-        check(foundCreate && foundEnable) {
-            "YAAP IInstalld patcher missing fsverity methods in OneOSInstalldProxy (create=$foundCreate, enable=$foundEnable)"
+        val missing = remap.keys - handled
+        check(missing.isEmpty()) {
+            "Custom ROM IInstalld patcher missing methods in OneOSInstalldProxy: ${missing.sorted().joinToString()}"
         }
     }
 
-    private data class DexResult(val bytes: ByteArray, val createHandled: Boolean, val enableHandled: Boolean)
+    private data class DexResult(val bytes: ByteArray, val handled: Set<String>)
 
-    private fun patchDexBytes(src: ByteArray): DexResult {
+    private fun patchDexBytes(src: ByteArray, remap: Map<String, Pair<Int, Int>>): DexResult {
         val raw = src.copyOf()
         val buf = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN)
         if (raw.size < 0x70 || String(raw, 0, 4, Charsets.US_ASCII) != "dex\n") {
-            return DexResult(raw, createHandled = false, enableHandled = false)
+            return DexResult(raw, emptySet())
         }
         val stringIdsOff = buf.getInt(0x3c)
         val typeIdsOff = buf.getInt(0x44)
@@ -228,8 +294,7 @@ object YaapInstalldDexPatcher {
         }
 
         var modified = false
-        var createOk = false
-        var enableOk = false
+        val handled = mutableSetOf<String>()
 
         for (i in 0 until classDefsSize) {
             val base = classDefsOff + i * 32
@@ -254,13 +319,12 @@ object YaapInstalldDexPatcher {
                     val codeOff = readUleb128(pos)
                     if (codeOff == 0) continue
                     val mname = getMethod(midx).second
-                    val mapping = REMAP[mname] ?: continue
+                    val mapping = remap[mname] ?: continue
 
                     val patchedMethod = patchMethodCode(raw, buf, codeOff, mapping.first, mapping.second, ::getMethod)
                     if (patchedMethod.valid) {
                         if (patchedMethod.changed) modified = true
-                        if (mname == "createFsveritySetupAuthToken") createOk = true
-                        if (mname == "enableFsverity") enableOk = true
+                        handled += mname
                     }
                 }
             }
@@ -273,7 +337,7 @@ object YaapInstalldDexPatcher {
             adler.update(raw, 12, raw.size - 12)
             buf.putInt(8, adler.value.toInt())
         }
-        return DexResult(raw, createOk, enableOk)
+        return DexResult(raw, handled)
     }
 
     private data class MethodPatch(val valid: Boolean, val changed: Boolean)
@@ -326,6 +390,15 @@ object YaapInstalldDexPatcher {
         for (j in transactIdx - 1 downTo 0) {
             val (unit, op) = units[j]
             val w0 = buf.getShort(insnsOff + unit * 2).toInt() and 0xffff
+            if (op == 0x12 && ((w0 ushr 8) and 0xf) == codeReg) {
+                val cur = (((w0 ushr 12) and 0xf) shl 28) shr 28
+                if (cur == wantNew) return MethodPatch(valid = true, changed = false)
+                if (cur == wantOld && wantNew in -8..7) {
+                    buf.putShort(insnsOff + unit * 2, ((w0 and 0x0fff) or ((wantNew and 0xf) shl 12)).toShort())
+                    return MethodPatch(valid = true, changed = true)
+                }
+                return MethodPatch(valid = false, changed = false)
+            }
             if (op == 0x13 && ((w0 ushr 8) and 0xff) == codeReg) {
                 val immOff = insnsOff + (unit + 1) * 2
                 val cur = buf.getShort(immOff).toInt()
