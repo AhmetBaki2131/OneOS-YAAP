@@ -283,8 +283,9 @@ jobs:
           raw_note = (os.environ.get("INPUT_NOTES") or "").strip()
           if not raw_note:
               raw_note = (os.environ.get("COMMIT_MSG") or "").splitlines()[0].strip() if os.environ.get("COMMIT_MSG") else ""
-          if not raw_note:
-              raw_note = f"OneOS {vname} signed release with A05 custom ROM and auto-update support"
+          # Ensure English ASCII release notes for in-app update.json banner
+          if not raw_note or not raw_note.isascii():
+              raw_note = f"OneOS {vname} signed release with Galaxy A05 custom ROM and auto-update support"
           # AppUpdate.kt rejects quotes, backslashes, and notes > 140 chars
           clean_note = re.sub(r'["\\\r\n\t]+', " ", raw_note).strip()
           clean_note = re.sub(r"\s{2,}", " ", clean_note)[:140].strip()
