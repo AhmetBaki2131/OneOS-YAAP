@@ -19,8 +19,8 @@ GitHub Actions derlemesi güncel kararlı upstream `OneOS 0.5.32` (`v0.5.32`) s�
 
 ## Galaxy A05 varyant desteği
 
-- `SM-A055F` (global) ve `SM-A055M` (Latin Amerika) aynı `a05m` / MT6768 donanım profiline bağlanır.
-- Profil eşleşmesi model + `ro.product.device=a05m` + SoC üçlüsünü birlikte doğrular; başka SM-A05 cihazları yanlışlıkla kabul edilmez.
+- `SM-A055F` (global) `a05-f`, `SM-A055M` (Latin Amerika) `a05-m` adlı ayrı profillere bağlanır; stage ve kalibrasyon verileri paylaşılmaz.
+- İki profil de ortak `a05m` / MT6768 temelini doğrular; model öneki sırasıyla yalnız `SM-A055F` ve yalnız `SM-A055M` kabul eder. F’ye ait kamera/IMS/operatör sonucu M’ye doğrulanmış sayılmaz.
 - Her iki model Android 15, 16 ve 17 regresyon matrisinde test edilir. Canlı donanım doğrulaması şimdilik SM-A055F üzerinde yapılmıştır; SM-A055M kamera/IMS sonucu cihaz raporu gelene kadar “canlı doğrulandı” sayılmaz.
 
 ## 2026-11-21 ColorOS 17 canlı doğrulaması
