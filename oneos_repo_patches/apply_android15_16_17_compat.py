@@ -18,6 +18,7 @@ EDITION_HOME = Path("app-android/app/src/full/kotlin/com/fahadali/oneos/ui/Editi
 SYSTEMS_ACTIVITY = Path("app-android/app/src/full/kotlin/com/fahadali/oneos/ui/SystemsActivity.kt")
 ROOT_SH = Path("app-android/app/src/full/assets/root/oneos_root.sh")
 GUEST_PROPS = Path("switcher/assets/guest_props.sh")
+GUEST_START = Path("switcher/assets/guest_start.sh")
 
 
 def replace_once(content: str, old: str, new: str, label: str) -> str:
@@ -548,6 +549,28 @@ def patch_systems_activity(source: str) -> str:
     )
 
 
+def patch_guest_start(source: str) -> str:
+    old = """if [ -x "$DERIVE" ] && "$DERIVE" "$CLASSPATH_FILE" > /data/derive_classpath.log 2>&1; then
+    while read -r kw name value; do
+        [ "$kw" = "export" ] && [ -n "$name" ] && export "$name=$value"
+    done < "$CLASSPATH_FILE"
+    echo "[Pivoted Root] Guest class paths loaded from $CLASSPATH_FILE:"
+    sed 's/^/[Pivoted Root]   /' "$CLASSPATH_FILE" | cut -c1-400"""
+    new = """if [ -x "$DERIVE" ] && "$DERIVE" "$CLASSPATH_FILE" > /data/derive_classpath.log 2>&1; then
+    VIRT_JAR=/apex/com.android.virt/javalib/framework-virtualization.jar
+    if [ -f "$VIRT_JAR" ] && ! grep -q "$VIRT_JAR" "$CLASSPATH_FILE" 2>/dev/null; then
+        awk -v vj="$VIRT_JAR" '/^export BOOTCLASSPATH / { $0 = $0 ":" vj } { print }' "$CLASSPATH_FILE" > "${CLASSPATH_FILE}.tmp" &&
+            mv -f "${CLASSPATH_FILE}.tmp" "$CLASSPATH_FILE"
+        echo "[Pivoted Root] Added $VIRT_JAR to BOOTCLASSPATH (SDK 36 guest on SDK 37 host)"
+    fi
+    while read -r kw name value; do
+        [ "$kw" = "export" ] && [ -n "$name" ] && export "$name=$value"
+    done < "$CLASSPATH_FILE"
+    echo "[Pivoted Root] Guest class paths loaded from $CLASSPATH_FILE:"
+    sed 's/^/[Pivoted Root]   /' "$CLASSPATH_FILE" | cut -c1-400"""
+    return replace_once(source, old, new, "guest_start.sh framework-virtualization.jar SDK 36 on 37 bridge")
+
+
 TARGETS = (
     (GATES, patch_gates),
     (CUSTOM_ROM, patch_custom_rom),
@@ -560,6 +583,7 @@ TARGETS = (
     (SYSTEMS_ACTIVITY, patch_systems_activity),
     (ROOT_SH, patch_root_sh),
     (GUEST_PROPS, patch_guest_props),
+    (GUEST_START, patch_guest_start),
 )
 
 
