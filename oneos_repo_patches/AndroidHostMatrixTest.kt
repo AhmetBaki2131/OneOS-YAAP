@@ -100,9 +100,12 @@ class AndroidHostMatrixTest {
                     vendorModel = model,
                     bootloader = suffix + "XXU1TEST",
                 )
+                val expected = if (model == "SM-A055M") Profiles.A05M else Profiles.A05
+                val other = if (model == "SM-A055M") Profiles.A05 else Profiles.A05M
                 val resolution = Profiles.resolve(facts)
-                assertEquals("$model / Android $sdk profile", Profiles.A05.id, resolution.profile?.id)
-                assertTrue("$model / Android $sdk must match the A05 hardware profile", Profiles.A05.matches(facts))
+                assertEquals("$model / Android $sdk profile", expected.id, resolution.profile?.id)
+                assertTrue("$model / Android $sdk must match only its calibrated profile", expected.matches(facts))
+                assertFalse("$model / Android $sdk must not match the other regional profile", other.matches(facts))
             }
         }
     }
