@@ -13,6 +13,9 @@ PROFILES = Path("app-android/core/model/src/main/kotlin/com/fahadali/oneos/core/
 INSTALLD_TABLE = Path("app-android/core/model/src/main/kotlin/com/fahadali/oneos/core/model/InstalldTable.kt")
 APP_ASSETS = Path("app-android/app/src/full/kotlin/com/fahadali/oneos/session/AppAssets.kt")
 PREPARE_JOB = Path("app-android/app/src/full/kotlin/com/fahadali/oneos/session/PrepareJob.kt")
+APP_UPDATER = Path("app-android/app/src/full/kotlin/com/fahadali/oneos/session/AppUpdater.kt")
+EDITION_HOME = Path("app-android/app/src/full/kotlin/com/fahadali/oneos/ui/EditionHome.kt")
+SYSTEMS_ACTIVITY = Path("app-android/app/src/full/kotlin/com/fahadali/oneos/ui/SystemsActivity.kt")
 ROOT_SH = Path("app-android/app/src/full/assets/root/oneos_root.sh")
 GUEST_PROPS = Path("switcher/assets/guest_props.sh")
 
@@ -518,6 +521,33 @@ def patch_guest_props(source: str) -> str:
     return replace_once(source, old, new, "guest_props.sh SDK 36 on SDK 37 bridge")
 
 
+def patch_app_updater(source: str) -> str:
+    return replace_once(
+        source,
+        "        StageCheck.state.busy || PrepareJob.state.busy || LaunchJob.state.busy || LogJob.state.busy ||",
+        "        PrepareJob.state.busy || LaunchJob.state.busy || LogJob.state.busy ||",
+        "AppUpdater do not block self-update on read-only StageCheck",
+    )
+
+
+def patch_edition_home(source: str) -> str:
+    return replace_once(
+        source,
+        "        AppUpdater.check(requireContext())",
+        "        AppUpdater.check(requireContext(), autoInstall = true)",
+        "EditionHome autoInstall on resume",
+    )
+
+
+def patch_systems_activity(source: str) -> str:
+    return replace_once(
+        source,
+        "        com.fahadali.oneos.session.AppUpdater.check(requireContext())",
+        "        com.fahadali.oneos.session.AppUpdater.check(requireContext(), autoInstall = true)",
+        "SystemsActivity autoInstall on resume",
+    )
+
+
 TARGETS = (
     (GATES, patch_gates),
     (CUSTOM_ROM, patch_custom_rom),
@@ -525,6 +555,9 @@ TARGETS = (
     (INSTALLD_TABLE, patch_installd_table),
     (APP_ASSETS, patch_app_assets),
     (PREPARE_JOB, patch_prepare_job),
+    (APP_UPDATER, patch_app_updater),
+    (EDITION_HOME, patch_edition_home),
+    (SYSTEMS_ACTIVITY, patch_systems_activity),
     (ROOT_SH, patch_root_sh),
     (GUEST_PROPS, patch_guest_props),
 )

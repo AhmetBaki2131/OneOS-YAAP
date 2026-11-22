@@ -244,7 +244,8 @@ object YaapInstalldDexPatcher {
                 }
             }
         }
-        val missing = remap.keys - handled
+        // Android 15 and OxygenOS 16.0 (CPH2745) only declare singular createOatDir, not createOatDirs.
+        val missing = (remap.keys - handled) - setOf("createOatDirs")
         check(missing.isEmpty()) {
             "Custom ROM IInstalld patcher missing methods in OneOSInstalldProxy: ${missing.sorted().joinToString()}"
         }
