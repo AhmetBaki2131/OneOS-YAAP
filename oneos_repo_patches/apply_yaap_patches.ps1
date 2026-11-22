@@ -141,7 +141,7 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
         }
 '@ "CustomRom.kt YAAP opt-in"
 
-# 3. Profiles.kt: add Galaxy A05 (SM-A055 / a05m / MT6768)
+# 3. Profiles.kt: add Galaxy A05 (SM-A055F/M / a05m / MT6768)
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Profiles.kt" `
 @'
     const val ID_M35 = "m35"
@@ -159,14 +159,14 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 '@ `
 @'
     /**
-     * Galaxy A05 (SM-A055F, codename a05m, MediaTek MT6769V/CZ -> MT6768 Helio G85,
+     * Galaxy A05 (SM-A055F global and SM-A055M Latin America, codename a05m,`r`n     * MediaTek MT6769V/CZ -> MT6768 Helio G85,
      * verified 2026-11-18: YAAP Android 17, vendor API 34, kernel 6.6.144, composer3 AIDL,
      * /sys/class/leds/lcd-backlight, KernelSU, installd 55 methods: 25/27 match + fsverity 52/53).
      */
     val A05 = PhoneProfile(
         id = ID_A05,
         label = "Galaxy A05",
-        modelPrefix = "SM-A055",
+        modelPrefix = "SM-A055", // Explicitly covers SM-A055F (global) and SM-A055M (Latin America).
         codename = "a05m",
         socModel = "MT6768",
         form = FormFactor.BAR,
