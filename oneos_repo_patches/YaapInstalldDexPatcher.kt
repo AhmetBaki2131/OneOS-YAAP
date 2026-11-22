@@ -321,7 +321,7 @@ object YaapInstalldDexPatcher {
                     val mname = getMethod(midx).second
                     val mapping = remap[mname] ?: continue
 
-                    val patchedMethod = patchMethodCode(raw, buf, codeOff, mapping.first, mapping.second, ::getMethod)
+                    val patchedMethod = patchMethodCode(raw, buf, codeOff, mname, mapping.first, mapping.second, ::getMethod)
                     if (patchedMethod.valid) {
                         if (patchedMethod.changed) modified = true
                         handled += mname
@@ -346,12 +346,51 @@ object YaapInstalldDexPatcher {
         raw: ByteArray,
         buf: ByteBuffer,
         codeOff: Int,
+        mname: String,
         wantOld: Int,
         wantNew: Int,
         getMethod: (Int) -> Pair<String, String>,
     ): MethodPatch {
         val insnsUnits = buf.getInt(codeOff + 12)
         val insnsOff = codeOff + 16
+        var sigBridged = false
+
+        // SDK 36 -> SDK 37 bridge for getAppSize (70 units) and getUserSize (61 units):
+        // Compact 8-word asBinder()+Parcel.obtain(IBinder) prologue into 4-word Parcel.obtain()
+        // and insert the extra Android 17 Parcel argument (writeInt(0) / writeIntArray(null)).
+        if ((mname == "getAppSize" && insnsUnits == 70) || (mname == "getUserSize" && insnsUnits == 61)) {
+            val w3 = buf.getShort(insnsOff + 3 * 2).toInt() and 0xffff
+            val w7 = buf.getShort(insnsOff + 7 * 2).toInt() and 0xffff
+            val w11 = buf.getShort(insnsOff + 11 * 2).toInt() and 0xffff
+            if (w3 == 0x000c && w7 == 0x000c && w11 == 0x010c) {
+                val insns = IntArray(insnsUnits) { k -> buf.getShort(insnsOff + k * 2).toInt() and 0xffff }
+                val insertAfter = if (mname == "getAppSize") 32 else 29
+                val writeCallFrom = if (mname == "getAppSize") 29 else 26
+                val writeMid = insns[writeCallFrom + 1]
+                val patched = IntArray(insnsUnits)
+                var p = 0
+                // 0..3: invoke-static {}, Parcel.obtain(); move-result-object v0
+                patched[p++] = insns[8]; patched[p++] = insns[9]; patched[p++] = insns[10]; patched[p++] = 0x000c
+                // 4..7: invoke-static {}, Parcel.obtain(); move-result-object v1
+                patched[p++] = insns[8]; patched[p++] = insns[9]; patched[p++] = insns[10]; patched[p++] = 0x010c
+                for (k in 12 until insertAfter) patched[p++] = insns[k]
+                // Extra Android 17 arg: const/4 v3, 0; invoke-virtual {v0, v3}, writeInt/writeIntArray
+                patched[p++] = 0x0312; patched[p++] = 0x206e; patched[p++] = writeMid; patched[p++] = 0x0030
+                for (k in insertAfter until insnsUnits) patched[p++] = insns[k]
+                check(p == insnsUnits)
+                for (k in 0 until insnsUnits) buf.putShort(insnsOff + k * 2, patched[k].toShort())
+                var endInsns = insnsOff + insnsUnits * 2
+                if (insnsUnits % 2 == 1) endInsns += 2
+                val startAddr = buf.getInt(endInsns)
+                val insnCnt = buf.getShort(endInsns + 4).toInt() and 0xffff
+                if (startAddr == 12) {
+                    buf.putInt(endInsns, 8)
+                    buf.putShort(endInsns + 4, (insnCnt + 4).toShort())
+                }
+                sigBridged = true
+            }
+        }
+
         val units = ArrayList<Pair<Int, Int>>()
         var u = 0
         while (u < insnsUnits) {
@@ -392,7 +431,7 @@ object YaapInstalldDexPatcher {
             val w0 = buf.getShort(insnsOff + unit * 2).toInt() and 0xffff
             if (op == 0x12 && ((w0 ushr 8) and 0xf) == codeReg) {
                 val cur = (((w0 ushr 12) and 0xf) shl 28) shr 28
-                if (cur == wantNew) return MethodPatch(valid = true, changed = false)
+                if (cur == wantNew) return MethodPatch(valid = true, changed = sigBridged)
                 if (cur == wantOld && wantNew in -8..7) {
                     buf.putShort(insnsOff + unit * 2, ((w0 and 0x0fff) or ((wantNew and 0xf) shl 12)).toShort())
                     return MethodPatch(valid = true, changed = true)
@@ -402,7 +441,7 @@ object YaapInstalldDexPatcher {
             if (op == 0x13 && ((w0 ushr 8) and 0xff) == codeReg) {
                 val immOff = insnsOff + (unit + 1) * 2
                 val cur = buf.getShort(immOff).toInt()
-                if (cur == wantNew) return MethodPatch(valid = true, changed = false)
+                if (cur == wantNew) return MethodPatch(valid = true, changed = sigBridged)
                 if (cur == wantOld) {
                     buf.putShort(immOff, wantNew.toShort())
                     return MethodPatch(valid = true, changed = true)
@@ -412,7 +451,7 @@ object YaapInstalldDexPatcher {
             if (op == 0x14 && ((w0 ushr 8) and 0xff) == codeReg) {
                 val immOff = insnsOff + (unit + 1) * 2
                 val cur = buf.getInt(immOff)
-                if (cur == wantNew) return MethodPatch(valid = true, changed = false)
+                if (cur == wantNew) return MethodPatch(valid = true, changed = sigBridged)
                 if (cur == wantOld) {
                     buf.putInt(immOff, wantNew)
                     return MethodPatch(valid = true, changed = true)

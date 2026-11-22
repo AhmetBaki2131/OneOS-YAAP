@@ -14,6 +14,7 @@ INSTALLD_TABLE = Path("app-android/core/model/src/main/kotlin/com/fahadali/oneos
 APP_ASSETS = Path("app-android/app/src/full/kotlin/com/fahadali/oneos/session/AppAssets.kt")
 PREPARE_JOB = Path("app-android/app/src/full/kotlin/com/fahadali/oneos/session/PrepareJob.kt")
 ROOT_SH = Path("app-android/app/src/full/assets/root/oneos_root.sh")
+GUEST_PROPS = Path("switcher/assets/guest_props.sh")
 
 
 def replace_once(content: str, old: str, new: str, label: str) -> str:
@@ -48,7 +49,14 @@ def patch_gates(source: str) -> str:
         source,
         """        } else if (profile != null && offered.isNotEmpty() && f.sdk < offered.first()) {
             // No system of this phone runs next to its One UI: nothing to choose, One UI has to be updated.""",
-        """        } else if (!switching && f.sdk in 35..37 && sdks.isNotEmpty()) {
+        """        } else if (f.sdk == 37 && sdks == listOf(36)) {
+            Finding(
+                ID_ANDROID, Level.WARN, "Android 16 guest on Android 17 host (experimental bridge)",
+                "Host Android $have (SDK ${f.sdk}); selected image is Android 16 (SDK 36). " +
+                    "Cross-version IInstalld bytecode and SDK property bridge enabled.",
+                R_ANDROID_DIFFERS,
+            )
+        } else if (!switching && f.sdk in 35..37 && sdks.isNotEmpty()) {
             // SDK 35/36/37 hosts can inspect and prepare a signed image without pretending its
             // guest framework has been backported. The SWITCH gate below remains BLOCK.
             Finding(
@@ -66,11 +74,12 @@ def patch_gates(source: str) -> str:
     end = source.index("    private fun oldSwitcher(", start)
     old = source[start:end]
     new = """    private fun installd(input: GateInput, image: ImageRef? = null, switching: Boolean): Finding {
-        // Check the HOST API, never the guest API. Treating a ColorOS 17 image as
-        // Android 15/16 would send incompatible installd transaction codes.
+        // Check the HOST API, never the guest API. SDK 36 guests (OxygenOS 16) on SDK 37 hosts
+        // are bridged via YaapInstalldDexPatcher (20 code remaps + getAppSize/getUserSize Parcel bridge).
         val hostSdk = input.facts.sdk
         val guestSdk = image?.sdk
-        if (guestSdk != null && guestSdk != hostSdk) {
+        val bridged36On37 = hostSdk == 37 && guestSdk == 36
+        if (guestSdk != null && guestSdk != hostSdk && !bridged36On37) {
             return if (switching) {
                 block(
                     ID_INSTALLD, "Host and guest ABI versions differ",
@@ -104,7 +113,7 @@ def patch_gates(source: str) -> str:
                 )
             }
         }
-        val sdk = hostSdk
+        val sdk = if (bridged36On37) 36 else hostSdk
         val p = InstalldExpected.problems(
             input.installd,
             if (sdk == 36) input.expectedInstalldA16 else input.expectedInstalld,
@@ -272,7 +281,11 @@ def patch_installd_table(source: str) -> str:
         val byName = derived.methods.associateBy { it.name }
         return byName["createFsveritySetupAuthToken"]?.code == 52 && byName["enableFsverity"]?.code == 53
     }"""
-    new_helpers = """    fun allowedSubsetCompatible(derived: InstalldDerivation, sdk: Int = 37): Boolean {
+    new_helpers = """    private fun signatureMatchesOrBridged(sdk: Int, name: String, wantSig: String, gotSig: String): Boolean =
+        gotSig == wantSig ||
+            (sdk == 36 && (name == "getAppSize" || name == "getUserSize") && ALLOWED_AOSP_37[name]?.second == gotSig)
+
+    fun allowedSubsetCompatible(derived: InstalldDerivation, sdk: Int = 37): Boolean {
         if (!derived.ok) return false
         val expected = allowedMapForSdk(sdk) ?: return false
         val byName = derived.methods.associateBy { it.name }
@@ -281,7 +294,7 @@ def patch_installd_table(source: str) -> str:
         return expected.all { (name, want) ->
             val got = byName[name]
             if (got == null) sdk == 35 && name == "createOatDirs"
-            else got.signature == want.second && got.code in 1..InstalldTableFormat.MAX_METHODS
+            else signatureMatchesOrBridged(sdk, name, want.second, got.signature) && got.code in 1..InstalldTableFormat.MAX_METHODS
         }
     }
 
@@ -297,7 +310,9 @@ def patch_installd_table(source: str) -> str:
         val remap = linkedMapOf<String, Pair<Int, Int>>()
         for ((name, want) in expected) {
             val got = byName[name] ?: continue
-            if (got.signature == want.second && got.code != want.first) {
+            if (signatureMatchesOrBridged(sdk, name, want.second, got.signature) &&
+                (got.code != want.first || got.signature != want.second)
+            ) {
                 remap[name] = want.first to got.code
             }
         }
@@ -370,15 +385,12 @@ def patch_root_sh(source: str) -> str:
     )
     source = replace_once(
         source,
-        '        "a05-m nothingos5-asteroids") echo nothing-a ;;',
-        '''        "a05-m nothingos5-asteroids") echo nothing-a ;;
-        "a05-f oxygenos16-cph2745") echo oxygen16 ;;
-        "a05-m oxygenos16-cph2745") echo oxygen16 ;;
-        "a05-f hyperos-hongkong") echo hyper-hk ;;
-        "a05-m hyperos-hongkong") echo hyper-hk ;;
-        "a05-f oneui95-s948b") echo oneui95 ;;
-        "a05-m oneui95-s948b") echo oneui95 ;;''',
-        "oneos_root.sh split A05 profile_set choices",
+        '        "a05 nothingos5-asteroids") echo nothing-a ;;',
+        '''        "a05 nothingos5-asteroids") echo nothing-a ;;
+        "a05 oxygenos16-cph2745") echo oxygen16 ;;
+        "a05 hyperos-hongkong") echo hyper-hk ;;
+        "a05 oneui95-s948b") echo oneui95 ;;''',
+        "oneos_root.sh a05 profile_set choices",
     )
     source = replace_once(
         source,
@@ -411,7 +423,11 @@ check_table_subset() { # <table file> <staged host_installd.txt> <method count>
         END {
             if (bad || nwant != 27) exit 1
             for (k in want) {
-                if (!(k in got) || got[k] != want[k]) exit 1
+                if (!(k in got)) exit 1
+                if (got[k] == want[k]) continue
+                if (k == "getAppSize" && got[k] == "(Ljava/lang/String;[Ljava/lang/String;IIII[J[Ljava/lang/String;)[J") continue
+                if (k == "getUserSize" && got[k] == "(Ljava/lang/String;II[I[I)[J") continue
+                exit 1
             }
         }
     ' "$2" "$1" 2>/dev/null
@@ -457,7 +473,46 @@ check_table() {""",
     [ "$soc" = "$3" ] || refuse "chip $soc, profile $M_PROFILE is $3"''',
         "oneos_root.sh do_launch vendor & platform fallback",
     )
+    source = replace_once(
+        source,
+        '''    isdk=$(image_sdk "$M_IMAGE")
+    [ "$(getprop ro.build.version.sdk)" = "$isdk" ] || refuse "Android SDK $(getprop ro.build.version.sdk), the image is $isdk"''',
+        '''    isdk=$(image_sdk "$M_IMAGE")
+    hsdk=$(getprop ro.build.version.sdk)
+    [ "$hsdk" = "$isdk" ] || { [ "$hsdk" = 37 ] && [ "$isdk" = 36 ]; } || refuse "Android SDK $hsdk, the image is $isdk"''',
+        "oneos_root.sh do_launch allow SDK 36 guest on SDK 37 host",
+    )
     return source
+
+
+def patch_guest_props(source: str) -> str:
+    old = '''            if [ -n "$h" ] && [ "$g" != "$h" ] && [ "${g%%.*}" = "$(getprop ro.build.version.sdk)" ]; then
+                echo "$key=$h" >> "$OVR" && "$RP" -n "$key" "$g" 2>/dev/null &&
+                    echo "guest_props: $key=$g for the session (One UI: $h; the guest framework has no $h APIs)"
+            fi ;;
+    esac'''
+    new = '''            if [ -n "$h" ] && [ "$g" != "$h" ] && { [ "${g%%.*}" = "$(getprop ro.build.version.sdk)" ] || { [ "${g%%.*}" = 36 ] && [ "$(getprop ro.build.version.sdk)" = 37 ]; }; }; then
+                echo "$key=$h" >> "$OVR" && "$RP" -n "$key" "$g" 2>/dev/null &&
+                    echo "guest_props: $key=$g for the session (host: $h; the guest framework has no $h APIs)"
+            fi ;;
+    esac
+    # SDK 36 guest (OxygenOS 16) bridged on an SDK 37 host: set guest SDK/release props for the session
+    # so Build.VERSION.SDK_INT is 36 inside the guest, and restore host 37/17 automatically on return.
+    gsdk=$(sed -n 's/^ro.build.version.sdk=//p' "$ROOTFS/system/build.prop" 2>/dev/null | tail -n 1)
+    if [ "$gsdk" = 36 ] && [ "$(getprop ro.build.version.sdk)" = 37 ]; then
+        for key in ro.build.version.sdk ro.system.build.version.sdk ro.system_ext.build.version.sdk ro.product.build.version.sdk; do
+            h=$(getprop "$key")
+            [ -n "$h" ] && [ "$h" != 36 ] || continue
+            echo "$key=$h" >> "$OVR" && "$RP" -n "$key" 36 2>/dev/null
+        done
+        for key in ro.build.version.release ro.build.version.release_or_codename ro.system.build.version.release ro.system.build.version.release_or_codename ro.system_ext.build.version.release ro.product.build.version.release; do
+            h=$(getprop "$key")
+            [ -n "$h" ] && [ "$h" != 16 ] || continue
+            echo "$key=$h" >> "$OVR" && "$RP" -n "$key" 16 2>/dev/null
+        done
+        echo "guest_props: SDK 36 guest on SDK 37 host -> ro.*.version.sdk=36, release=16 for the session"
+    fi'''
+    return replace_once(source, old, new, "guest_props.sh SDK 36 on SDK 37 bridge")
 
 
 TARGETS = (
@@ -468,6 +523,7 @@ TARGETS = (
     (APP_ASSETS, patch_app_assets),
     (PREPARE_JOB, patch_prepare_job),
     (ROOT_SH, patch_root_sh),
+    (GUEST_PROPS, patch_guest_props),
 )
 
 

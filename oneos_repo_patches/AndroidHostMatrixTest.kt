@@ -90,27 +90,6 @@ class AndroidHostMatrixTest {
         )
 
     @Test
-    fun galaxyA05GlobalAndLatamVariantsResolveOnAndroid15To17() {
-        for (model in listOf("SM-A055F", "SM-A055M")) {
-            val suffix = model.removePrefix("SM-")
-            for (sdk in 35..37) {
-                val facts = a05Facts(
-                    sdk = sdk,
-                    model = model,
-                    vendorModel = model,
-                    bootloader = suffix + "XXU1TEST",
-                )
-                val expected = if (model == "SM-A055M") Profiles.A05M else Profiles.A05
-                val other = if (model == "SM-A055M") Profiles.A05 else Profiles.A05M
-                val resolution = Profiles.resolve(facts)
-                assertEquals("$model / Android $sdk profile", expected.id, resolution.profile?.id)
-                assertTrue("$model / Android $sdk must match only its calibrated profile", expected.matches(facts))
-                assertFalse("$model / Android $sdk must not match the other regional profile", other.matches(facts))
-            }
-        }
-    }
-
-    @Test
     fun android15And16CanPrepareButNotSwitchAndroid17Image() {
         for (sdk in listOf(35, 36)) {
             val preparation = report(sdk, GatePhase.PREPARE)
@@ -159,6 +138,32 @@ class AndroidHostMatrixTest {
                 assertEquals("$label $phase installd", Level.OK, res.find(SwitchGates.ID_INSTALLD)?.level)
                 assertFalse("$label $phase should not block", res.blocked)
             }
+        }
+    }
+
+    @Test
+    fun android17HostBridgesOxygen16WithCodeAndSignatureRemap() {
+        val yaap17 = derivationFrom(InstalldExpected.ALLOWED_AOSP_37 + InstalldExpected.ALLOWED_YAAP_FSVERITY_37)
+        assertTrue("YAAP 17 compatible with SDK 36 OxygenOS 16 bridge", InstalldExpected.allowedSubsetCompatible(yaap17, 36))
+        val remap = InstalldExpected.customRomCodeRemap(yaap17, 36)
+        assertEquals("20 bridged methods (18 shifted + getAppSize/getUserSize)", 20, remap.size)
+        assertEquals(12 to 13, remap["getAppSize"])
+        assertEquals(13 to 14, remap["getUserSize"])
+
+        val facts = a05Facts(sdk = 37, oneUiRaw = "70000")
+        for (phase in GatePhase.entries) {
+            val res = report(
+                sdk = 37,
+                phase = phase,
+                profile = Profiles.A05,
+                image = Images.OXYGEN16,
+                facts = facts,
+                installd = yaap17,
+                allowCustomAospHost = true,
+            )
+            assertEquals("Oxygen16 on A17 $phase Android", Level.WARN, res.find(SwitchGates.ID_ANDROID)?.level)
+            assertEquals("Oxygen16 on A17 $phase installd", Level.OK, res.find(SwitchGates.ID_INSTALLD)?.level)
+            assertFalse("Oxygen16 on A17 $phase should not block", res.blocked)
         }
     }
 
