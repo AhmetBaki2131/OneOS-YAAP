@@ -559,11 +559,16 @@ Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 '@ `
 @'
         "a15-5g oxygenos16-cph2745") echo oxygen16 ;;
-        "a05-f coloros17-findx9u-in-1105"|"a05-m coloros17-findx9u-in-1105") echo x9u-in-1105-sultra ;;
-        "a05-f infinityx41-findx9u"|"a05-m infinityx41-findx9u") echo infinityx ;;
-        "a05-f lineage24-infiniti"|"a05-m lineage24-infiniti") echo lineage ;;
-        "a05-f hyperos-lhasa"|"a05-m hyperos-lhasa") echo hyper-f8u ;;
-        "a05-f nothingos5-asteroids"|"a05-m nothingos5-asteroids") echo nothing-a ;;
+        "a05-f coloros17-findx9u-in-1105") echo x9u-in-1105-sultra ;;
+        "a05-m coloros17-findx9u-in-1105") echo x9u-in-1105-sultra ;;
+        "a05-f infinityx41-findx9u") echo infinityx ;;
+        "a05-m infinityx41-findx9u") echo infinityx ;;
+        "a05-f lineage24-infiniti") echo lineage ;;
+        "a05-m lineage24-infiniti") echo lineage ;;
+        "a05-f hyperos-lhasa") echo hyper-f8u ;;
+        "a05-m hyperos-lhasa") echo hyper-f8u ;;
+        "a05-f nothingos5-asteroids") echo nothing-a ;;
+        "a05-m nothingos5-asteroids") echo nothing-a ;;
         *) return 1 ;;
 '@ "oneos_root.sh separate A05 variant package sets"
 
