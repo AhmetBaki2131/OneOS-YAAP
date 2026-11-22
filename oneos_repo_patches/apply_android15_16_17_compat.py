@@ -370,11 +370,14 @@ def patch_root_sh(source: str) -> str:
     )
     source = replace_once(
         source,
-        '        "a05-f nothingos5-asteroids"|"a05-m nothingos5-asteroids") echo nothing-a ;;',
-        '''        "a05-f nothingos5-asteroids"|"a05-m nothingos5-asteroids") echo nothing-a ;;
-        "a05-f oxygenos16-cph2745"|"a05-m oxygenos16-cph2745") echo oxygen16 ;;
-        "a05-f hyperos-hongkong"|"a05-m hyperos-hongkong") echo hyper-hk ;;
-        "a05-f oneui95-s948b"|"a05-m oneui95-s948b") echo oneui95 ;;''',
+        '        "a05-m nothingos5-asteroids") echo nothing-a ;;',
+        '''        "a05-m nothingos5-asteroids") echo nothing-a ;;
+        "a05-f oxygenos16-cph2745") echo oxygen16 ;;
+        "a05-m oxygenos16-cph2745") echo oxygen16 ;;
+        "a05-f hyperos-hongkong") echo hyper-hk ;;
+        "a05-m hyperos-hongkong") echo hyper-hk ;;
+        "a05-f oneui95-s948b") echo oneui95 ;;
+        "a05-m oneui95-s948b") echo oneui95 ;;''',
         "oneos_root.sh split A05 profile_set choices",
     )
     source = replace_once(
