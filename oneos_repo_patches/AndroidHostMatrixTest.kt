@@ -90,6 +90,24 @@ class AndroidHostMatrixTest {
         )
 
     @Test
+    fun galaxyA05GlobalAndLatamVariantsResolveOnAndroid15To17() {
+        for (model in listOf("SM-A055F", "SM-A055M")) {
+            val suffix = model.removePrefix("SM-")
+            for (sdk in 35..37) {
+                val facts = a05Facts(
+                    sdk = sdk,
+                    model = model,
+                    vendorModel = model,
+                    bootloader = suffix + "XXU1TEST",
+                )
+                val resolution = Profiles.resolve(facts)
+                assertEquals("$model / Android $sdk profile", Profiles.A05.id, resolution.profile?.id)
+                assertTrue("$model / Android $sdk must match the A05 hardware profile", Profiles.A05.matches(facts))
+            }
+        }
+    }
+
+    @Test
     fun android15And16CanPrepareButNotSwitchAndroid17Image() {
         for (sdk in listOf(35, 36)) {
             val preparation = report(sdk, GatePhase.PREPARE)
