@@ -547,9 +547,10 @@ Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 @'
         m35) echo "SM-M356 m35x s5e8835 bar" ;;
         a15-5g) echo "SM-A156 a15x MT6835 bar" ;;
-        a05) echo "SM-A055 a05m MT6768 bar" ;;
+        a05-f) echo "SM-A055F a05m MT6768 bar" ;;
+        a05-m) echo "SM-A055M a05m MT6768 bar" ;;
         *) return 1 ;;
-'@ "oneos_root.sh profile_info a05"
+'@ "oneos_root.sh separate A05 variant profile info"
 
 Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 @'
@@ -558,13 +559,13 @@ Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 '@ `
 @'
         "a15-5g oxygenos16-cph2745") echo oxygen16 ;;
-        "a05 coloros17-findx9u-in-1105") echo x9u-in-1105-sultra ;;
-        "a05 infinityx41-findx9u") echo infinityx ;;
-        "a05 lineage24-infiniti") echo lineage ;;
-        "a05 hyperos-lhasa") echo hyper-f8u ;;
-        "a05 nothingos5-asteroids") echo nothing-a ;;
+        "a05-f coloros17-findx9u-in-1105"|"a05-m coloros17-findx9u-in-1105") echo x9u-in-1105-sultra ;;
+        "a05-f infinityx41-findx9u"|"a05-m infinityx41-findx9u") echo infinityx ;;
+        "a05-f lineage24-infiniti"|"a05-m lineage24-infiniti") echo lineage ;;
+        "a05-f hyperos-lhasa"|"a05-m hyperos-lhasa") echo hyper-f8u ;;
+        "a05-f nothingos5-asteroids"|"a05-m nothingos5-asteroids") echo nothing-a ;;
         *) return 1 ;;
-'@ "oneos_root.sh profile_set a05"
+'@ "oneos_root.sh separate A05 variant package sets"
 
 Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 @'
