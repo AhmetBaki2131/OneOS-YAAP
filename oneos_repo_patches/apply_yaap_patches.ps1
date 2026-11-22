@@ -150,8 +150,9 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 @'
     const val ID_M35 = "m35"
     const val ID_A15_5G = "a15-5g"
-    const val ID_A05 = "a05"
-'@ "Profiles.kt ID_A05"
+    const val ID_A05 = "a05-f"
+    const val ID_A05M = "a05-m"
+'@ "Profiles.kt A05 variant IDs"
 
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Profiles.kt" `
 @'
@@ -159,19 +160,31 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 '@ `
 @'
     /**
-     * Galaxy A05 (SM-A055F global and SM-A055M Latin America, codename a05m,`r`n     * MediaTek MT6769V/CZ -> MT6768 Helio G85,
-     * verified 2026-11-18: YAAP Android 17, vendor API 34, kernel 6.6.144, composer3 AIDL,
-     * /sys/class/leds/lcd-backlight, KernelSU, installd 55 methods: 25/27 match + fsverity 52/53).
+     * Galaxy A05 global variant (SM-A055F, codename a05m, MT6768).
+     * Live-verified 2026-11-18 on YAAP Android 17. Its stage id is deliberately
+     * separate from the Latin America variant so regional calibration cannot leak.
      */
     val A05 = PhoneProfile(
         id = ID_A05,
-        label = "Galaxy A05",
-        modelPrefix = "SM-A055", // Explicitly covers SM-A055F (global) and SM-A055M (Latin America).
+        label = "Galaxy A05 (SM-A055F Global)",
+        modelPrefix = "SM-A055F",
         codename = "a05m",
         socModel = "MT6768",
         form = FormFactor.BAR,
         choices = listOf(X9U_IN_1105_CHOICE, INFINITYX_CHOICE, LINEAGE_CHOICE, HYPEROS_CHOICE, NOTHING_A_CHOICE),
         notes = listOf(MEDIATEK, olderVendor("34 (Android 14)", "6.6")),
+    )
+
+    /**
+     * Galaxy A05 Latin America variant (SM-A055M, codename a05m, MT6768).
+     * It intentionally has its own profile/stage id. Shared SoC/display defaults
+     * are allowed, but F-specific camera, IMS and carrier calibration is not assumed.
+     */
+    val A05M = A05.copy(
+        id = ID_A05M,
+        label = "Galaxy A05 (SM-A055M Latin America)",
+        modelPrefix = "SM-A055M",
+        choices = A05.choices.map { it.copy(tested = false) },
     )
 
     val BUILT_IN: List<PhoneProfile> = listOf(
@@ -182,10 +195,10 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
         A55, S25_FE, S_8450, M55S, S_ULTRA_8450_JP, S_PLUS_9945, S_ULTRA_8550_JP, S_9925, A16_MTK, S_8550_JP, M35, A15_5G, S_PLUS_8650,
 '@ `
 @'
-        A55, S25_FE, S_8450, M55S, S_ULTRA_8450_JP, S_PLUS_9945, S_ULTRA_8550_JP, S_9925, A16_MTK, S_8550_JP, M35, A15_5G, S_PLUS_8650, A05,
+        A55, S25_FE, S_8450, M55S, S_ULTRA_8450_JP, S_PLUS_9945, S_ULTRA_8550_JP, S_9925, A16_MTK, S_8550_JP, M35, A15_5G, S_PLUS_8650, A05, A05M,
 '@ "Profiles.kt BUILT_IN list"
 
-# 4. ApkSeries.kt: register ID_A05 in S25 series
+# 4. ApkSeries.kt: register the separate SM-A055F and SM-A055M profiles in S25 series
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\ApkSeries.kt" `
 @'
             // 0.4.95: the Galaxy M35 5G (One UI 9) and the Galaxy A15 5G with MediaTek (One UI 8.5).
@@ -195,7 +208,7 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 @'
             // 0.4.95: the Galaxy M35 5G (One UI 9) and the Galaxy A15 5G with MediaTek (One UI 8.5).
             Profiles.ID_M35, Profiles.ID_A15_5G,
-            Profiles.ID_A05,
+            Profiles.ID_A05, Profiles.ID_A05M,
         ),
 '@ "ApkSeries.kt A05"
 
@@ -1049,7 +1062,11 @@ case "$(getprop ro.product.device)$(getprop ro.product.vendor.device)" in
         } > "$STAGE/host_statusbar"
         echo "328,0:392,58" > "$STAGE/host_screenhole"
         echo 36 > "$STAGE/host_corner_radius"
-        echo "Host status bar: A05 fixed cutout written" ;;
+        case "$(getprop ro.product.model)" in
+            SM-A055M*) echo "a05-m" > "$STAGE/a05_variant"; echo "Host status bar: A055M LATAM baseline written" ;;
+            SM-A055F*) echo "a05-f" > "$STAGE/a05_variant"; echo "Host status bar: A055F global calibration written" ;;
+            *) echo "unknown" > "$STAGE/a05_variant"; echo "Host status bar: unrecognized A05 variant baseline written" ;;
+        esac ;;
 esac
 # Post-boot fixes for the guest (radio kick, WingCam permissions, RAM, SD card), started by the UI activator.
 cat > "$STAGE/oneos_fixes.sh" <<'OSFIXEOF'
