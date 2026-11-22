@@ -1,4 +1,4 @@
-name: Build OneOS Custom ROM APKs (SM-A055F)
+name: Build OneOS Custom ROM APKs (SM-A055F/M)
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
           cp -a yaap/OneOS-source OneOS
           echo "Building the source owned by AhmetBaki2131/OneOS-YAAP; no upstream checkout."
 
-      - name: Apply custom-ROM patches for Galaxy A05 (SM-A055F)
+      - name: Apply custom-ROM patches for Galaxy A05 (SM-A055F/M)
         run: |
           pwsh -NoProfile -File yaap/oneos_repo_patches/apply_yaap_patches.ps1 -OneOsRoot "$PWD/OneOS"
           python3 yaap/oneos_repo_patches/apply_multirom_patches.py --root "$PWD/OneOS" --check
@@ -52,7 +52,7 @@ jobs:
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Audit A05 IInstalld ABI offline
+      - name: Audit A05 SM-A055F/M IInstalld ABI offline
         run: |
           python3 -m unittest discover -s yaap/scripts -p 'test_audit_installd_abi.py' -v
           python3 yaap/scripts/audit_installd_abi.py \
@@ -84,7 +84,7 @@ jobs:
             ${{ runner.temp }}/oneui8-vs-coloros17-reference.json
           if-no-files-found: error
 
-      - name: Test Android 15-17 host compatibility gates
+      - name: Test SM-A055F/M Android 15-17 host compatibility gates
         working-directory: OneOS/app-android
         run: |
           chmod +x gradlew
@@ -144,7 +144,7 @@ jobs:
       - name: Upload APKs as Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: OneOS-CustomROM-A05-APKs
+          name: OneOS-CustomROM-A05-F-M-APKs
           path: |
             OneOS/app-android/app/build/outputs/apk/full/debug/app-full-debug.apk
             OneOS/app-android/app/build/outputs/apk/probe/debug/app-probe-debug.apk
