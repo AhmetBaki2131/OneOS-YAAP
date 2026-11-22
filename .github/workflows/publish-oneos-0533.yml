@@ -1,0 +1,49 @@
+name: Publish OneOS 0.5.33 update
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - .github/workflows/publish-oneos-0533.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified APK artifact from run 40
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 45050788429 \
+            --repo AhmetBaki2131/OneOS-YAAP \
+            --name OneOS-CustomROM-A05-F-M-APKs \
+            --dir artifact
+          cp artifact/app/build/outputs/apk/full/debug/app-full-debug.apk OneOS-0.5.33.apk
+
+      - name: Create updater metadata
+        run: |
+          bytes=$(stat -c %s OneOS-0.5.33.apk)
+          sha=$(sha256sum OneOS-0.5.33.apk | cut -d' ' -f1)
+          jq -n \
+            --arg apk "https://github.com/AhmetBaki2131/OneOS-YAAP/releases/download/v0.5.33/OneOS-0.5.33.apk" \
+            --arg sha "$sha" \
+            --argjson bytes "$bytes" \
+            '{versionCode:176,versionName:"0.5.33",apk:$apk,bytes:$bytes,sha256:$sha,notes:"OxygenOS 16 A05 YAAP installd hazırlama düzeltmesi",systems:"*"}' \
+            > update.json
+          cat update.json
+
+      - name: Publish latest GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.5.33 \
+            OneOS-0.5.33.apk update.json \
+            --repo AhmetBaki2131/OneOS-YAAP \
+            --latest \
+            --title "OneOS 0.5.33" \
+            --notes "Galaxy A05 SM-A055F/M: OxygenOS 16 hazırlanırken oluşan installd table hatasını düzeltir. Android 15, 16 ve 17 profil ayrımları korunur."
+
