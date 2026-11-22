@@ -1,4 +1,4 @@
-# OneOS Custom ROM Android 15–17 (SM-A055F / MT6768) Uyarlama Paketi
+# OneOS Custom ROM Android 15–17 (SM-A055F/M / MT6768) Uyarlama Paketi
 
 ## Android 15 / 16 / 17 host compatibility (experimental)
 
@@ -17,6 +17,12 @@ Bu dal YAAP ile sınırlı değildir. Android 17 tabanlı özel ROM ev sahipleri
 
 GitHub Actions derlemesi güncel kararlı upstream `OneOS 0.5.32` (`v0.5.32`) sürümünü temel alır.
 
+## Galaxy A05 varyant desteği
+
+- `SM-A055F` (global) ve `SM-A055M` (Latin Amerika) aynı `a05m` / MT6768 donanım profiline bağlanır.
+- Profil eşleşmesi model + `ro.product.device=a05m` + SoC üçlüsünü birlikte doğrular; başka SM-A05 cihazları yanlışlıkla kabul edilmez.
+- Her iki model Android 15, 16 ve 17 regresyon matrisinde test edilir. Canlı donanım doğrulaması şimdilik SM-A055F üzerinde yapılmıştır; SM-A055M kamera/IMS sonucu cihaz raporu gelene kadar “canlı doğrulandı” sayılmaz.
+
 ## 2026-11-21 ColorOS 17 canlı doğrulaması
 
 - Kablosuz ADB ile `SM-A055F`, Android 17 / SDK 37 ve `720x1600 @ 300 dpi` doğrulandı.
@@ -28,7 +34,7 @@ GitHub Actions derlemesi güncel kararlı upstream `OneOS 0.5.32` (`v0.5.32`) s�
 - PD/PPS/HVDCP algısı `sys.oneos.fast_charging` durumuna yansıtılır. Bu köprü yalnızca host çekirdeğinin sonucunu ColorOS oturumuna taşır; termal ve PMIC güvenlik sınırlarını değiştirmez.
 - Cihaz sensör servisinde ivmeölçer, ışık ve yakınlık sensörleri çalışıyor. Manyetometre bildirilmediği için pusula yönü bu cihaz/ROM birleşiminde yazılımla üretilemez.
 
-Bu klasör, açık kaynak [`fahadalijaved/OneOS`](../OneOS/README.md) projesini **Samsung Galaxy A05 (`SM-A055F`, MediaTek MT6768 / Helio G85, KernelSU, YAAP Android 17)** ortamına uyarlamak için hazırlanmış araçları ve yamaları içerir.
+Bu klasör, açık kaynak [`fahadalijaved/OneOS`](../OneOS/README.md) projesini **Samsung Galaxy A05 (`SM-A055F` global ve `SM-A055M` Latin Amerika, `a05m`, MediaTek MT6768 / Helio G85)** ortamına uyarlamak için hazırlanmış araçları ve yamaları içerir.
 
 > [!WARNING]
 > **Deneysel Sistem İşlemi:** OneOS benzeri container switch araçları root yetkisiyle `/data` bind mount'ları ve `zygote`/`system_server` değişimi yapar. Probe ve Companion araçları salt okunurdur (risksizdir); gerçek geçiş aşamasına gelmeden önce **tam yedek alınmalı** ve **ekran kilidi (`Yok`/`Kaydır`) kaldırılmalıdır**.
@@ -47,7 +53,7 @@ Bu klasör, açık kaynak [`fahadalijaved/OneOS`](../OneOS/README.md) projesini 
    - Ekrandan cihaz uyumluluğunu, ISA desteğini (Pixel dışındaki SVE gerektirmeyen `LineageOS 24`, `Infinity-X 4.1`, `Nothing OS 5.0 A-series`, `HyperOS`, `ColorOS 17 Find X9U` imajlarına göre), ekran kilidi/pil/depolama durumunu, root + `IInstalld` testini çalıştırır ve geçiş için `GapSplashActivity` sağlar.
 
 3. **`oneos_repo_patches/apply_yaap_patches.ps1`**
-   - Upstream [OneOS](../OneOS) reposunu `SM-A055F + YAAP 17` desteğine hazırlayan yamalar:
+   - Repository-owned OneOS kaynağını `SM-A055F/M` ve Android 15–17 özel ROM ev sahiplerine hazırlayan yamalar:
      - `Soc.kt`: `MT6769V/CZ -> MT6768` normalizasyonu ve `mt6768 -> MT6768 (MediaTek Helio G85)` eşlemesi
      - `CustomRom.kt` & `Gates.kt`: `allowCustomAospHost` opsiyonuyla One UI dışı YAAP 17 ev sahibini bloklamak yerine uyarı ile açma
      - `Profiles.kt` & `ApkSeries.kt`: `Galaxy A05 (SM-A055 / a05m)` profili
