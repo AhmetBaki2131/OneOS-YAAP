@@ -1,9 +1,21 @@
-name: Build OneOS Custom ROM APKs (SM-A055F/M)
+name: Build & Release OneOS Custom ROM APKs (SM-A055F)
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'Optional 1-line update.json note (max 140 chars, no quotes/backslashes)'
+        required: false
+        default: ''
+      publish_release:
+        description: 'Publish GitHub Release (latest) with update.json for OneOS auto-updater'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
 
 jobs:
   build-apk:
@@ -22,15 +34,90 @@ jobs:
           cp -a yaap/OneOS-source OneOS
           echo "Building the source owned by AhmetBaki2131/OneOS-YAAP; no upstream checkout."
 
-      - name: Apply custom-ROM patches for Galaxy A05 (SM-A055F/M)
+      - name: Apply custom-ROM patches for Galaxy A05 (SM-A055F)
         run: |
           pwsh -NoProfile -File yaap/oneos_repo_patches/apply_yaap_patches.ps1 -OneOsRoot "$PWD/OneOS"
           python3 yaap/oneos_repo_patches/apply_multirom_patches.py --root "$PWD/OneOS" --check
           python3 yaap/oneos_repo_patches/apply_multirom_patches.py --root "$PWD/OneOS"
           python3 yaap/oneos_repo_patches/apply_android15_16_17_compat.py --root "$PWD/OneOS" --check
           python3 yaap/oneos_repo_patches/apply_android15_16_17_compat.py --root "$PWD/OneOS"
-          python3 yaap/oneos_repo_patches/apply_oxygen16_yaap_installd.py --root "$PWD/OneOS"
           cp yaap/oneos_repo_patches/AndroidHostMatrixTest.kt OneOS/app-android/core/model/src/test/kotlin/com/fahadali/oneos/core/model/AndroidHostMatrixTest.kt
+
+      - name: Compute strictly increasing release version and patch Gradle config
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          run_num = int(os.environ["RUN_NUMBER"])
+          # Monotonic versionCode (> 175 installed, > 176 v0.5.33) and clean AppUpdate-valid versionName
+          version_code = 175 + run_num
+          patch = 7 + run_num  # run 27 -> 0.5.34, run 28 -> 0.5.35, ...
+          if patch <= 999:
+              version_name = f"0.5.{patch}"
+          else:
+              version_name = f"0.{5 + patch // 1000}.{patch % 1000}"
+
+          assert re.fullmatch(r"[0-9]{1,3}(\.[0-9]{1,3}){1,3}", version_name), version_name
+          assert 3 <= len(version_name) <= 15, version_name
+
+          gradle = Path("OneOS/app-android/app/build.gradle.kts")
+          text = gradle.read_text(encoding="utf-8")
+          text, n1 = re.subn(r"(^\s*versionCode\s*=\s*)\d+(\s*$)", rf"\g<1>{version_code}\2", text, count=1, flags=re.M)
+          text, n2 = re.subn(r'(^\s*versionName\s*=\s*)"[^"]+"(\s*$)', rf'\g<1>"{version_name}"\2', text, count=1, flags=re.M)
+          assert n1 == 1 and n2 == 1, f"Failed to patch version in build.gradle.kts (n1={n1}, n2={n2})"
+          gradle.write_text(text, encoding="utf-8")
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_f:
+              env_f.write(f"ONEOS_VERSION_CODE={version_code}\n")
+              env_f.write(f"ONEOS_VERSION_NAME={version_name}\n")
+              env_f.write(f"ONEOS_RELEASE_TAG=v{version_name}\n")
+          print(f"Release version set: {version_name} (versionCode={version_code}, tag=v{version_name})")
+          PY
+
+      - name: Configure permanent OneOS-YAAP signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ONEOS_SIGNING_KEYSTORE_B64 }}
+          KEY_ALIAS: ${{ secrets.ONEOS_SIGNING_KEY_ALIAS }}
+          STORE_PASS: ${{ secrets.ONEOS_SIGNING_STORE_PASS }}
+          KEY_PASS: ${{ secrets.ONEOS_SIGNING_KEY_PASS }}
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, os, sys
+          from pathlib import Path
+
+          b64 = "".join(os.environ.get("KEYSTORE_B64", "").split())
+          alias = os.environ.get("KEY_ALIAS", "").strip()
+          spass = os.environ.get("STORE_PASS", "").strip()
+          kpass = os.environ.get("KEY_PASS", "").strip()
+          if not (b64 and alias and spass and kpass):
+              sys.exit("Missing ONEOS_SIGNING_* repository secrets; refusing to build with a mismatched key.")
+
+          raw = base64.b64decode(b64, validate=True)
+          got_sha = hashlib.sha256(raw).hexdigest()
+          want_sha = "361c1707ef68e65f4f050b95798acd7de0d9a1fda5030eff4e8ff2c3136ed536"
+          if got_sha != want_sha:
+              sys.exit(f"Keystore SHA-256 mismatch: got {got_sha}, expected {want_sha}")
+
+          rel_dir = Path.home() / ".oneos-release"
+          rel_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+          ks_path = rel_dir / "oneos-yaap.jks"
+          ks_path.write_bytes(raw)
+          os.chmod(ks_path, 0o600)
+
+          props = rel_dir / "keystore.properties"
+          props.write_text(
+              f"storeFile={ks_path}\n"
+              f"storePassword={spass}\n"
+              f"keyAlias={alias}\n"
+              f"keyPassword={kpass}\n",
+              encoding="utf-8",
+          )
+          os.chmod(props, 0o600)
+          print(f"Permanent signing keystore verified and installed ({len(raw)} bytes).")
+          PY
 
       - name: Setup JDK 21
         uses: actions/setup-java@v4
@@ -53,7 +140,7 @@ jobs:
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Audit A05 SM-A055F/M IInstalld ABI offline
+      - name: Audit A05 IInstalld ABI offline
         run: |
           python3 -m unittest discover -s yaap/scripts -p 'test_audit_installd_abi.py' -v
           python3 yaap/scripts/audit_installd_abi.py \
@@ -85,7 +172,7 @@ jobs:
             ${{ runner.temp }}/oneui8-vs-coloros17-reference.json
           if-no-files-found: error
 
-      - name: Test SM-A055F/M Android 15-17 host compatibility gates
+      - name: Test Android 15-17 host compatibility gates
         working-directory: OneOS/app-android
         run: |
           chmod +x gradlew
@@ -113,43 +200,134 @@ jobs:
           PY
           ./gradlew :core:root:testDebugUnitTest --tests "*ReadOnlyListsTest" --tests "*StageAuditTest" --tests "*EditionsTest" --console=plain
 
-      - name: Build guest manager APK and stage it
+      - name: Build signed release guest manager APK and stage it
         working-directory: OneOS/app-android
         env:
           GH_PACKAGES_USER: ${{ github.repository_owner }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
           chmod +x gradlew
-          ./gradlew :guest:assembleDebug --console=plain
-          cp guest/build/outputs/apk/debug/guest-debug.apk ../switcher/assets/guest_manager.apk
+          ./gradlew :guest:assembleRelease --console=plain
+          cp guest/build/outputs/apk/release/guest-release.apk ../switcher/assets/guest_manager.apk
           ls -lh ../switcher/assets/guest_manager.apk
 
-      - name: Build patched OneOS FullDebug APK (includes checkFullDebugStagingApk)
+      - name: Build signed OneOS FullRelease APK (includes checkFullReleaseStagingApk)
         working-directory: OneOS/app-android
         env:
           GH_PACKAGES_USER: ${{ github.repository_owner }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
-          ./gradlew :app:assembleFullDebug --console=plain
-          ls -lh app/build/outputs/apk/full/debug/
+          ./gradlew :app:assembleFullRelease --console=plain
+          ls -lh app/build/outputs/apk/full/release/
 
-      - name: Build root-required English OneOS Probe APK (includes checkProbeDebugApk)
+      - name: Build signed root-required English OneOS ProbeRelease APK (includes checkProbeReleaseApk)
         working-directory: OneOS/app-android
         env:
           GH_PACKAGES_USER: ${{ github.repository_owner }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
-          ./gradlew :app:assembleProbeDebug --console=plain
-          ls -lh app/build/outputs/apk/probe/debug/
+          ./gradlew :app:assembleProbeRelease --console=plain
+          ls -lh app/build/outputs/apk/probe/release/
 
-      - name: Upload APKs as Artifacts
+      - name: Verify APK signatures and build validated update.json
+        env:
+          REPO_FULL: ${{ github.repository }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          INPUT_NOTES: ${{ github.event.inputs.release_notes }}
+        run: |
+          python3 - <<'PY'
+          import glob, hashlib, json, os, re, shutil, subprocess, sys
+          from pathlib import Path
+
+          want_cert = "adbb4b392666b3e5b8452d74289427f19d4de042aa45c01aaa4f7a6052bba8c0"
+          sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+          signers = sorted(glob.glob(os.path.join(sdk, "build-tools", "*", "apksigner")))
+          assert signers, f"apksigner not found under {sdk}"
+          apksigner = signers[-1]
+
+          vcode = int(os.environ["ONEOS_VERSION_CODE"])
+          vname = os.environ["ONEOS_VERSION_NAME"]
+          tag = os.environ["ONEOS_RELEASE_TAG"]
+          repo = os.environ["REPO_FULL"]
+
+          rel_out = Path(os.environ["RUNNER_TEMP"]) / "release"
+          rel_out.mkdir(parents=True, exist_ok=True)
+
+          full_src = Path("OneOS/app-android/app/build/outputs/apk/full/release/app-full-release.apk")
+          probe_src = Path("OneOS/app-android/app/build/outputs/apk/probe/release/app-probe-release.apk")
+          guest_src = Path("OneOS/app-android/guest/build/outputs/apk/release/guest-release.apk")
+
+          full_dst = rel_out / f"OneOS-{vname}.apk"
+          probe_dst = rel_out / f"OneOS-Probe-{vname}.apk"
+          guest_dst = rel_out / f"OneOS-Guest-{vname}.apk"
+
+          for src, dst in ((full_src, full_dst), (probe_src, probe_dst), (guest_src, guest_dst)):
+              assert src.is_file(), f"Missing APK: {src}"
+              shutil.copyfile(src, dst)
+              res = subprocess.run([apksigner, "verify", "--verbose", "--print-certs", str(dst)], capture_output=True, text=True)
+              if res.returncode != 0:
+                  sys.exit(f"apksigner verify FAILED for {dst.name}:\n{res.stdout}\n{res.stderr}")
+              certs = re.findall(r"certificate SHA-256 digest:\s*([0-9a-f]{64})", res.stdout)
+              assert certs and all(c == want_cert for c in certs), f"Cert mismatch on {dst.name}: {certs} != {want_cert}"
+              print(f"Signature OK ({dst.name}): {dst.stat().st_size} B, cert={certs[0]}")
+
+          full_size = full_dst.stat().st_size
+          assert 1 <= full_size <= 256 * 1024 * 1024, f"APK size out of AppUpdate bounds: {full_size}"
+
+          h = hashlib.sha256()
+          with full_dst.open("rb") as f:
+              for chunk in iter(lambda: f.read(1 << 20), b""):
+                  h.update(chunk)
+          full_sha = h.hexdigest()
+
+          raw_note = (os.environ.get("INPUT_NOTES") or "").strip()
+          if not raw_note:
+              raw_note = (os.environ.get("COMMIT_MSG") or "").splitlines()[0].strip() if os.environ.get("COMMIT_MSG") else ""
+          if not raw_note:
+              raw_note = f"OneOS {vname} signed release with A05 custom ROM and auto-update support"
+          # AppUpdate.kt rejects quotes, backslashes, and notes > 140 chars
+          clean_note = re.sub(r'["\\\r\n\t]+', " ", raw_note).strip()
+          clean_note = re.sub(r"\s{2,}", " ", clean_note)[:140].strip()
+
+          apk_url = f"https://github.com/{repo}/releases/download/{tag}/OneOS-{vname}.apk"
+          update = {
+              "versionCode": vcode,
+              "versionName": vname,
+              "apk": apk_url,
+              "bytes": full_size,
+              "sha256": full_sha,
+              "notes": clean_note,
+              "systems": "*",
+          }
+          body = json.dumps(update, indent=2, ensure_ascii=False) + "\n"
+
+          # Validate against the exact AppUpdate.kt parser rules!
+          assert len(body) <= 4096, "update.json exceeds 4096 chars"
+          prefix = f"https://github.com/{repo}/releases/download/"
+          assert apk_url.startswith(prefix)
+          rel_path = apk_url[len(prefix):]
+          assert re.fullmatch(r"v[0-9.]{3,15}/OneOS-[0-9.]{3,15}\.apk", rel_path), f"Bad apk path: {rel_path}"
+          assert re.fullmatch(r"[0-9]{1,3}(\.[0-9]{1,3}){1,3}", vname), f"Bad versionName: {vname}"
+          assert re.fullmatch(r"[0-9a-f]{64}", full_sha), f"Bad sha256: {full_sha}"
+          for key in ("versionCode", "versionName", "apk", "bytes", "sha256", "notes", "systems"):
+              matches = re.findall(r'"' + key + r'"\s*:\s*("[^"\\]*"|[0-9]+)', body)
+              assert len(matches) == 1, f"AppUpdate.kt parser mismatch for key {key}: {matches}\n{body}"
+
+          update_path = rel_out / "update.json"
+          update_path.write_text(body, encoding="utf-8")
+          print("=== Generated & validated update.json ===")
+          print(body)
+          PY
+
+      - name: Upload signed release APKs and update.json as Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: OneOS-CustomROM-A05-F-M-APKs
+          name: OneOS-CustomROM-A05-APKs
           path: |
-            OneOS/app-android/app/build/outputs/apk/full/debug/app-full-debug.apk
-            OneOS/app-android/app/build/outputs/apk/probe/debug/app-probe-debug.apk
-            OneOS/app-android/guest/build/outputs/apk/debug/guest-debug.apk
+            ${{ runner.temp }}/release/OneOS-${{ env.ONEOS_VERSION_NAME }}.apk
+            ${{ runner.temp }}/release/OneOS-Probe-${{ env.ONEOS_VERSION_NAME }}.apk
+            ${{ runner.temp }}/release/OneOS-Guest-${{ env.ONEOS_VERSION_NAME }}.apk
+            ${{ runner.temp }}/release/update.json
           if-no-files-found: error
 
       - name: Upload OneOS Probe Device Report APK
@@ -157,8 +335,43 @@ jobs:
         with:
           name: OneOS-Probe-DeviceReport-APK
           path: |
-            OneOS/app-android/app/build/outputs/apk/probe/debug/app-probe-debug.apk
+            ${{ runner.temp }}/release/OneOS-Probe-${{ env.ONEOS_VERSION_NAME }}.apk
           if-no-files-found: error
+
+      - name: Publish GitHub Release (latest) for OneOS Auto-Updater
+        if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || github.event.inputs.publish_release != 'false')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${ONEOS_RELEASE_TAG}"
+          VER="${ONEOS_VERSION_NAME}"
+          CODE="${ONEOS_VERSION_CODE}"
+          REL="${RUNNER_TEMP}/release"
+          NOTES="Automatic signed release **OneOS ${VER}** (versionCode \`${CODE}\`).
+
+          - Signed with permanent OneOS-YAAP certificate (\`adbb4b39...bba8c0\`) for seamless in-app auto-updates.
+          - Includes \`update.json\` for OneOS self-updater (\`releases/latest/download/update.json\`).
+          - Also attaches root-required English \`OneOS-Probe-${VER}.apk\`."
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "$REL/OneOS-${VER}.apk" \
+              "$REL/OneOS-Probe-${VER}.apk" \
+              "$REL/update.json" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --latest --title "OneOS ${VER}" --notes "$NOTES"
+          else
+            gh release create "$TAG" \
+              "$REL/OneOS-${VER}.apk" \
+              "$REL/OneOS-Probe-${VER}.apk" \
+              "$REL/update.json" \
+              --repo "$GITHUB_REPOSITORY" \
+              --latest \
+              --title "OneOS ${VER}" \
+              --notes "$NOTES"
+          fi
+          echo "Published latest GitHub Release: $TAG"
 
       - name: Run root script & installd tests
         working-directory: OneOS/app-android
@@ -170,4 +383,7 @@ jobs:
         run: |
           ./gradlew :core:root:test :core:safety:test --console=plain
 
-
+      - name: Clean up signing keystore from runner
+        if: always()
+        run: |
+          rm -rf "$HOME/.oneos-release"
