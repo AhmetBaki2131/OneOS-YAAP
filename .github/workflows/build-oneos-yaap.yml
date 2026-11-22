@@ -29,6 +29,7 @@ jobs:
           python3 yaap/oneos_repo_patches/apply_multirom_patches.py --root "$PWD/OneOS"
           python3 yaap/oneos_repo_patches/apply_android15_16_17_compat.py --root "$PWD/OneOS" --check
           python3 yaap/oneos_repo_patches/apply_android15_16_17_compat.py --root "$PWD/OneOS"
+          python3 yaap/oneos_repo_patches/apply_oxygen16_yaap_installd.py --root "$PWD/OneOS"
           cp yaap/oneos_repo_patches/AndroidHostMatrixTest.kt OneOS/app-android/core/model/src/test/kotlin/com/fahadali/oneos/core/model/AndroidHostMatrixTest.kt
 
       - name: Setup JDK 21
@@ -168,4 +169,5 @@ jobs:
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
           ./gradlew :core:root:test :core:safety:test --console=plain
+
 
