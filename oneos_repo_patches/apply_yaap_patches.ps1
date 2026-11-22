@@ -1066,7 +1066,8 @@ case "$(getprop ro.product.device)$(getprop ro.product.vendor.device)" in
             SM-A055M*) echo "a05-m" > "$STAGE/a05_variant"; echo "Host status bar: A055M LATAM baseline written" ;;
             SM-A055F*) echo "a05-f" > "$STAGE/a05_variant"; echo "Host status bar: A055F global calibration written" ;;
             *) echo "unknown" > "$STAGE/a05_variant"; echo "Host status bar: unrecognized A05 variant baseline written" ;;
-        esac ;;
+        esac
+        echo "Host status bar: A05 fixed cutout written" ;;
 esac
 # Post-boot fixes for the guest (radio kick, WingCam permissions, RAM, SD card), started by the UI activator.
 cat > "$STAGE/oneos_fixes.sh" <<'OSFIXEOF'
