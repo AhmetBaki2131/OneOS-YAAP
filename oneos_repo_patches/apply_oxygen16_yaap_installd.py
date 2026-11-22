@@ -31,11 +31,11 @@ def main() -> None:
     replace_once(
         model,
         '    fun accepted(sdk: Int): Set<String> = when (sdk) { 37 -> setOf(SHA256, SHA256_95); 36 -> setOf(SHA256_A16, SHA256_A16_ONEUI80); else -> emptySet() }',
-        f'''    /** Verified SM-A055F/M YAAP table; runtime-code guests resolve matching signatures safely. */
+        f'''    /** Verified SM-A055F/M YAAP table for Android 16 runtime-code guests. */
     const val SHA256_YAAP = "{YAAP_SHA}"
 
     fun accepted(sdk: Int): Set<String> = when (sdk) {{
-        37 -> setOf(SHA256, SHA256_95, SHA256_YAAP)
+        37 -> setOf(SHA256, SHA256_95)
         36 -> setOf(SHA256_A16, SHA256_A16_ONEUI80, SHA256_YAAP)
         else -> emptySet()
     }}''',
@@ -44,8 +44,8 @@ def main() -> None:
     root_script = root / "app-android/app/src/full/assets/root/oneos_root.sh"
     replace_once(
         root_script,
-        '    if [ "$(image_sdk "$2")" = 36 ]; then carried=$INSTALLD_SHA_36 ok=$INSTALLD_OK_36',
-        '    if [ "$(image_sdk "$2")" = 36 ]; then carried=$INSTALLD_SHA_36 ok="$INSTALLD_OK_36 $INSTALLD_SHA_YAAP"',
+        f'INSTALLD_OK_36="a7c17883707d9b0b85e3f75f6d83cb4522ba1d120026d29308b69da968945977 9cd356141db2861d0e3858b923cbd1baf9dc1473e62c9dac4e655379abd09b21"',
+        f'INSTALLD_OK_36="a7c17883707d9b0b85e3f75f6d83cb4522ba1d120026d29308b69da968945977 9cd356141db2861d0e3858b923cbd1baf9dc1473e62c9dac4e655379abd09b21 {YAAP_SHA}"',
     )
 
     build = root / "app-android/app/build.gradle.kts"
