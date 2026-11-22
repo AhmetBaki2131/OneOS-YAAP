@@ -110,7 +110,7 @@ jobs:
           assert not bad, f"CRLF found in shell/list assets: {bad}"
           print("LF line ending check OK")
           PY
-          ./gradlew :core:root:test --tests "*ReadOnlyListsTest" --tests "*StageAuditTest" --tests "*EditionsTest" --console=plain
+          ./gradlew :core:root:testDebugUnitTest --tests "*ReadOnlyListsTest" --tests "*StageAuditTest" --tests "*EditionsTest" --console=plain
 
       - name: Build guest manager APK and stage it
         working-directory: OneOS/app-android
