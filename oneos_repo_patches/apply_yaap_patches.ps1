@@ -234,6 +234,25 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
         A55, S25_FE, S_8450, M55S, S_ULTRA_8450_JP, S_PLUS_9945, S_ULTRA_8550_JP, S_9925, A16_MTK, S_8550_JP, M35, A15_5G, S_PLUS_8650, A05, A05M,
 '@ "Profiles.kt BUILT_IN list"
 
+# 3b. Some custom ROM property services return an empty SoC to normal apps even
+# when adb/root can see mt6768. The exact Samsung model + codename pair is unique,
+# so normalize only those two A05 variants before the ordinary strict resolver.
+Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Profiles.kt" `
+@'
+    fun resolve(f: DeviceFacts, profiles: List<PhoneProfile> = BUILT_IN): ProfileResolution =
+        resolve(f.model, f.device, f.soc.model, profiles)
+'@ `
+@'
+    fun resolve(f: DeviceFacts, profiles: List<PhoneProfile> = BUILT_IN): ProfileResolution {
+        val model = f.model.trim().uppercase(Locale.ROOT)
+        val device = f.device.trim()
+        val exactA05 = device.equals("a05m", ignoreCase = true) &&
+            (model.startsWith("SM-A055F") || model.startsWith("SM-A055M"))
+        val resolvedSoc = if (exactA05) "MT6768" else f.soc.model
+        return resolve(f.model, f.device, resolvedSoc, profiles)
+    }
+'@ "Profiles.kt exact A05 custom-ROM normalization"
+
 # 4. ApkSeries.kt: register the separate SM-A055F and SM-A055M profiles in S25 series
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\ApkSeries.kt" `
 @'
