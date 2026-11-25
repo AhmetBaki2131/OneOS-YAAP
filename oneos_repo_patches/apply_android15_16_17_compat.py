@@ -189,19 +189,30 @@ def patch_profiles(source: str) -> str:
     )
     source = replace_once(
         source,
-        """    fun resolve(f: DeviceFacts, profiles: List<PhoneProfile> = BUILT_IN): ProfileResolution =
-        resolve(f.model, f.device, f.soc.model, profiles)""",
         """    fun resolve(f: DeviceFacts, profiles: List<PhoneProfile> = BUILT_IN): ProfileResolution {
-        val primary = resolve(f.model, f.device, f.soc.model, profiles)
+        val model = f.model.trim().uppercase(Locale.ROOT)
+        val device = f.device.trim()
+        val exactA05 = device.equals("a05m", ignoreCase = true) &&
+            (model.startsWith("SM-A055F") || model.startsWith("SM-A055M"))
+        val resolvedSoc = if (exactA05) "MT6768" else f.soc.model
+        return resolve(f.model, f.device, resolvedSoc, profiles)
+    }""",
+        """    fun resolve(f: DeviceFacts, profiles: List<PhoneProfile> = BUILT_IN): ProfileResolution {
+        val model = f.model.trim().uppercase(Locale.ROOT)
+        val device = f.device.trim()
+        val exactA05 = device.equals("a05m", ignoreCase = true) &&
+            (model.startsWith("SM-A055F") || model.startsWith("SM-A055M"))
+        val resolvedSoc = if (exactA05) "MT6768" else f.soc.model
+        val primary = resolve(f.model, f.device, resolvedSoc, profiles)
         if (primary.profile != null) return primary
         val vModel = f.vendorModel.trim()
         if (vModel.isNotEmpty()) {
-            val byVendor = resolve(vModel, f.device, f.soc.model, profiles)
+            val byVendor = resolve(vModel, f.device, resolvedSoc, profiles)
             if (byVendor.profile != null) return byVendor
         }
         val bl = f.bootloader.trim().uppercase(Locale.ROOT)
         if (CustomRomRule.samsungBootloader(bl) && bl.length >= 5) {
-            val byBl = resolve("SM-${bl.take(5)}", f.device, f.soc.model, profiles)
+            val byBl = resolve("SM-${bl.take(5)}", f.device, resolvedSoc, profiles)
             if (byBl.profile != null) return byBl
         }
         return primary
