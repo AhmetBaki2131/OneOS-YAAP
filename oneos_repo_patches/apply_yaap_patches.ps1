@@ -96,10 +96,46 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 @"
         val platform = p.platform.trim()
         val rawModel = p.model.trim()
-        val model = MODEL_ALIAS[rawModel.uppercase(Locale.ROOT)] ?: rawModel.ifEmpty {
-            PLATFORM_MODEL[platform.lowercase(Locale.ROOT)].orEmpty()
+        val inferredModel = listOf(p.platform, p.hardware, p.chipname)
+            .asSequence()
+            .map { it.trim().lowercase(Locale.ROOT) }
+            .mapNotNull(PLATFORM_MODEL::get)
+            .firstOrNull()
+            .orEmpty()
+        val model = (MODEL_ALIAS[rawModel.uppercase(Locale.ROOT)] ?: rawModel).ifEmpty {
+            inferredModel
         }
 "@ "Soc.kt resolve MT6769V/CZ alias"
+
+# A custom ROM may hide ro.soc.model and ro.board.platform from normal apps while
+# still exposing ro.hardware. Keep the A05 match strict (SM-A055F/M + a05m +
+# MT6768), but derive that final chip identity from every trusted SoC property.
+Replace-Exact "app-android\core\model\src\test\kotlin\com\fahadali\oneos\core\model\ProfilesTest.kt" `
+@'
+    @Test
+    fun socModelFromThePlatformWhenThePropIsEmpty() {
+        val f = Fixtures.facts(soc = Fixtures.F8U_SOC.copy(model = ""))
+        assertEquals("SM8850", f.soc.model)
+        assertEquals(Profiles.F8U, Profiles.resolve(f).profile)
+    }
+'@ `
+@'
+    @Test
+    fun socModelFromThePlatformWhenThePropIsEmpty() {
+        val f = Fixtures.facts(soc = Fixtures.F8U_SOC.copy(model = ""))
+        assertEquals("SM8850", f.soc.model)
+        assertEquals(Profiles.F8U, Profiles.resolve(f).profile)
+    }
+
+    @Test
+    fun a05SocModelFallsBackToHardwareOnRestrictedCustomRom() {
+        val soc = SocRules.resolve(SocProps(model = "", platform = "", hardware = "mt6768"))
+        assertEquals(SocVendor.MEDIATEK, soc.vendor)
+        assertEquals("MT6768", soc.model)
+        assertEquals(Profiles.A05, Profiles.resolve("SM-A055F", "a05m", soc.model).profile)
+        assertEquals(Profiles.A05M, Profiles.resolve("SM-A055M", "a05m", soc.model).profile)
+    }
+'@ "ProfilesTest.kt A05 restricted-property fallback"
 
 # 2. CustomRom.kt: allow YAAP/AOSP Android 17 Samsung-hardware host when allowCustomAospHost=true
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\CustomRom.kt" `
