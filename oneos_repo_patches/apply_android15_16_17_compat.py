@@ -33,8 +33,8 @@ def replace_once(content: str, old: str, new: str, label: str) -> str:
 def patch_gates(source: str) -> str:
     source = replace_once(
         source,
-        "out += Gate(android(f, image, profile, images))",
-        "out += Gate(android(f, image, profile, images, switching))",
+        "val android = android(f, image, profile, images, input.a17OnA16)",
+        "val android = android(f, image, profile, images, input.a17OnA16, switching)",
         "Android gate call",
     )
     source = replace_once(
@@ -45,14 +45,14 @@ def patch_gates(source: str) -> str:
     )
     source = replace_once(
         source,
-        "private fun android(f: DeviceFacts, image: ImageRef?, profile: PhoneProfile?, images: List<ImageRef>): Finding {",
-        "private fun android(f: DeviceFacts, image: ImageRef?, profile: PhoneProfile?, images: List<ImageRef>, switching: Boolean): Finding {",
+        "private fun android(f: DeviceFacts, image: ImageRef?, profile: PhoneProfile?, images: List<ImageRef>, a17OnA16: Boolean = false): Finding {",
+        "private fun android(f: DeviceFacts, image: ImageRef?, profile: PhoneProfile?, images: List<ImageRef>, a17OnA16: Boolean = false, switching: Boolean = false): Finding {",
         "Android gate signature",
     )
     source = replace_once(
         source,
-        """        } else if (profile != null && offered.isNotEmpty() && f.sdk < offered.first()) {
-            // No system of this phone runs next to its One UI: nothing to choose, One UI has to be updated.""",
+        """        } else if (image != null && Experimental.a17OnA16Offered(f.sdk, profile, a17OnA16, images)) {
+            // Another system of this phone in the tester build: it needs One UI's own Android version.""",
         """        } else if (f.sdk == 37 && sdks == listOf(36)) {
             Finding(
                 ID_ANDROID, Level.WARN, "Android 16 guest on Android 17 host (experimental bridge)",
@@ -70,8 +70,8 @@ def patch_gates(source: str) -> str:
                     "built for this Android version, matching IInstalld ABI and verified HALs.",
                 R_ANDROID_DIFFERS,
             )
-        } else if (profile != null && offered.isNotEmpty() && f.sdk < offered.first()) {
-            // No system of this phone runs next to its One UI: nothing to choose, One UI has to be updated.""",
+        } else if (image != null && Experimental.a17OnA16Offered(f.sdk, profile, a17OnA16, images)) {
+            // Another system of this phone in the tester build: it needs One UI's own Android version.""",
         "Android 15/16/17 preparation policy",
     )
     start = source.index("    private fun installd(input: GateInput, image: ImageRef? = null): Finding {")
@@ -79,11 +79,13 @@ def patch_gates(source: str) -> str:
     old = source[start:end]
     new = """    private fun installd(input: GateInput, image: ImageRef? = null, switching: Boolean): Finding {
         // Check the HOST API, never the guest API. SDK 36 guests (OxygenOS 16) on SDK 37 hosts
-        // are bridged via YaapInstalldDexPatcher (20 code remaps + getAppSize/getUserSize Parcel bridge).
+        // are bridged via YaapInstalldDexPatcher (20 code remaps + getAppSize/getUserSize Parcel bridge),
+        // and One UI 9.5 (SDK 37, RUNTIME_CODES) on SDK 36 hosts is allowed when input.a17OnA16 is enabled.
         val hostSdk = input.facts.sdk
         val guestSdk = image?.sdk
+        val a17 = Experimental.a17OnA16Pair(hostSdk, image, input.a17OnA16)
         val bridged36On37 = hostSdk == 37 && guestSdk == 36
-        if (guestSdk != null && guestSdk != hostSdk && !bridged36On37) {
+        if (guestSdk != null && guestSdk != hostSdk && !bridged36On37 && !a17) {
             return if (switching) {
                 block(
                     ID_INSTALLD, "Host and guest ABI versions differ",
@@ -117,11 +119,16 @@ def patch_gates(source: str) -> str:
                 )
             }
         }
-        val sdk = if (bridged36On37) 36 else hostSdk
+        val sdk = when {
+            bridged36On37 -> 36
+            a17 -> 37
+            else -> hostSdk
+        }
         val p = InstalldExpected.problems(
             input.installd,
             if (sdk == 36) input.expectedInstalldA16 else input.expectedInstalld,
             sdk,
+            a17OnA16 = a17,
             allowAospAllowedMatch = input.allowCustomAospHost,
         )
         return if (p.isEmpty()) {
@@ -184,8 +191,8 @@ def patch_profiles(source: str) -> str:
     source = replace_once(
         source,
         "        choices = listOf(X9U_IN_1105_CHOICE, INFINITYX_CHOICE, LINEAGE_CHOICE, HYPEROS_CHOICE, NOTHING_A_CHOICE),",
-        "        choices = listOf(X9U_IN_1105_CHOICE, OXYGEN16_CHOICE, INFINITYX_CHOICE, LINEAGE_CHOICE, HYPEROS_CHOICE, HYPEROS_HK_CHOICE, NOTHING_A_CHOICE, ONEUI95_CHOICE),",
-        "Profiles A05 choices incl Android 16",
+        "        choices = listOf(X9U_IN_1105_CHOICE, OXYGEN16_CHOICE, INFINITYX_CHOICE, LINEAGE_CHOICE, HYPEROS_CHOICE, HYPEROS_HK_CHOICE, NOTHING_A_CHOICE, ImageChoice(Images.ID_PIXELOS_ONYX, PackageSets.ID_PIXELOS, tested = false), ONEUI95_CHOICE),",
+        "Profiles A05 choices incl Android 16 and PixelOS 17",
     )
     source = replace_once(
         source,
@@ -345,10 +352,10 @@ def patch_installd_table(source: str) -> str:
 
     source = replace_once(
         source,
-        """        val compatible = Hashes.sha256(got) in accepted(sdk) ||
+        """        val compatible = Hashes.sha256(got) in accepted(sdk, a17OnA16) ||
             (allowAospAllowedMatch && sdk == 37 && allowedSubsetCompatible(derived))""",
-        """        val compatible = Hashes.sha256(got) in accepted(sdk) ||
-            (allowAospAllowedMatch && sdk in 35..37 && allowedSubsetCompatible(derived, sdk))""",
+        """        val compatible = Hashes.sha256(got) in accepted(sdk, a17OnA16) ||
+            (allowAospAllowedMatch && sdk in 35..37 && allowedSubsetCompatible(derived, if (a17OnA16) 36 else sdk))""",
         "InstalldTable problems sdk 35..37",
     )
     return source
@@ -406,16 +413,24 @@ def patch_root_sh(source: str) -> str:
         "a05-m oxygenos16-cph2745") echo oxygen16 ;;
         "a05-f hyperos-hongkong") echo hyper-hk ;;
         "a05-m hyperos-hongkong") echo hyper-hk ;;
+        "a05-f pixelos17-onyx") echo pixelos ;;
+        "a05-m pixelos17-onyx") echo pixelos ;;
         "a05-f oneui95-s948b") echo oneui95 ;;
         "a05-m oneui95-s948b") echo oneui95 ;;''',
         "oneos_root.sh split A05 profile_set choices",
     )
     source = replace_once(
         source,
+        'tab-s11 tab-s11-ultra tab-s12-ultra"',
+        'tab-s11 tab-s11-ultra tab-s12-ultra a05-f a05-m"',
+        "oneos_root.sh A17_ON_A16_PROFILES split A05 variants",
+    )
+    source = replace_once(
+        source,
         """image_sdk() { # <image id>
     if in_list "$1" "$IMAGES_SDK36"; then echo 36; else echo "$IMAGE_SDK"; fi
 }
-check_table() {""",
+# a17_on_a16 <image id>: the tester build's one pair, One UI 9.5 (SDK 37) on this phone's One UI 8 (SDK 36).""",
         """image_sdk() { # <image id>
     if in_list "$1" "$IMAGES_SDK35"; then echo 35
     elif in_list "$1" "$IMAGES_SDK36"; then echo 36
@@ -443,14 +458,14 @@ check_table_subset() { # <table file> <staged host_installd.txt> <method count>
             for (k in want) {
                 if (!(k in got)) exit 1
                 if (got[k] == want[k]) continue
-                if (k == "getAppSize" && got[k] == "(Ljava/lang/String;[Ljava/lang/String;IIII[J[Ljava/lang/String;)[J") continue
-                if (k == "getUserSize" && got[k] == "(Ljava/lang/String;II[I[I)[J") continue
+                if (k == "getAppSize" && (got[k] == "(Ljava/lang/String;[Ljava/lang/String;IIII[J[Ljava/lang/String;)[J" || got[k] == "(Ljava/lang/String;[Ljava/lang/String;III[J[Ljava/lang/String;)[J")) continue
+                if (k == "getUserSize" && (got[k] == "(Ljava/lang/String;II[I[I)[J" || got[k] == "(Ljava/lang/String;II[I)[J")) continue
                 exit 1
             }
         }
     ' "$2" "$1" 2>/dev/null
 }
-check_table() {""",
+# a17_on_a16 <image id>: the tester build's one pair, One UI 9.5 (SDK 37) on this phone's One UI 8 (SDK 36).""",
         "oneos_root.sh image_sdk & check_table_subset",
     )
     source = replace_once(
@@ -494,10 +509,14 @@ check_table() {""",
     source = replace_once(
         source,
         '''    isdk=$(image_sdk "$M_IMAGE")
-    [ "$(getprop ro.build.version.sdk)" = "$isdk" ] || refuse "Android SDK $(getprop ro.build.version.sdk), the image is $isdk"''',
+    # The tester build's One UI 9.5 on One UI 8 is the only other Android version that starts (a17_on_a16).
+    [ "$(getprop ro.build.version.sdk)" = "$isdk" ] || a17_on_a16 "$M_IMAGE" ||
+        refuse "Android SDK $(getprop ro.build.version.sdk), the image is $isdk"''',
         '''    isdk=$(image_sdk "$M_IMAGE")
     hsdk=$(getprop ro.build.version.sdk)
-    [ "$hsdk" = "$isdk" ] || { [ "$hsdk" = 37 ] && [ "$isdk" = 36 ]; } || refuse "Android SDK $hsdk, the image is $isdk"''',
+    # Allow One UI 9.5 on One UI 8 (a17_on_a16) and bridged SDK 36 guests on SDK 37 hosts.
+    [ "$hsdk" = "$isdk" ] || a17_on_a16 "$M_IMAGE" || { [ "$hsdk" = 37 ] && [ "$isdk" = 36 ]; } ||
+        refuse "Android SDK $hsdk, the image is $isdk"''',
         "oneos_root.sh do_launch allow SDK 36 guest on SDK 37 host",
     )
     return source

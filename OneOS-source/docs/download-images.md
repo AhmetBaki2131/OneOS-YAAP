@@ -65,6 +65,7 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy S23 Ultra (au) (SCG20, SM8550), not tested yet
   - Galaxy S23 (au) (SCG19, SM8550)
   - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
+  - Galaxy M36 5G (SM-M366, s5e8835), not tested yet
   - Galaxy S24+ (SM-S926, SM8650), not tested yet
   - Galaxy S26 FE (SM-S741, s5e9955), not tested yet
 
@@ -175,6 +176,7 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy S23 Ultra (au) (SCG20, SM8550), not tested yet
   - Galaxy S23 (au) (SCG19, SM8550), not tested yet
   - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
+  - Galaxy M36 5G (SM-M366, s5e8835), not tested yet
   - Galaxy S24+ (SM-S926, SM8650), not tested yet
   - Galaxy S26 FE (SM-S741, s5e9955), not tested yet
 
@@ -229,6 +231,7 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy S23 Ultra (au) (SCG20, SM8550), not tested yet
   - Galaxy S23 (au) (SCG19, SM8550), not tested yet
   - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
+  - Galaxy M36 5G (SM-M366, s5e8835), not tested yet
   - Galaxy S24+ (SM-S926, SM8650), not tested yet
   - Galaxy S26 FE (SM-S741, s5e9955), not tested yet
 
@@ -283,6 +286,7 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy S23 Ultra (au) (SCG20, SM8550)
   - Galaxy S23 (au) (SCG19, SM8550)
   - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
+  - Galaxy M36 5G (SM-M366, s5e8835), not tested yet
   - Galaxy S24+ (SM-S926, SM8650), not tested yet
   - Galaxy S26 FE (SM-S741, s5e9955), not tested yet
 
@@ -341,6 +345,7 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy A34 5G (SM-A346, MT6877), not tested yet
   - Galaxy A55 5G (SM-A556, s5e8845), not tested yet
   - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
+  - Galaxy M36 5G (SM-M366, s5e8835), not tested yet
 
 ## OxygenOS 16, OnePlus CPH2745 build
 
@@ -351,6 +356,7 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy S23 (SM-S911, SM8550), not tested yet
   - Galaxy S23+ (SM-S916, SM8550), not tested yet
   - Galaxy A07 (SM-A075, MT6789), not tested yet
+  - Galaxy Z Fold4 (SM-F936, SM8475)
   - Galaxy S23 Ultra (SM-S918, SM8550), not tested yet
   - Galaxy A26 (SM-A266, s5e8835), not tested yet
   - Galaxy A17 (SM-A175, MT6789), not tested yet
@@ -383,7 +389,26 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy A16 5G (MediaTek) (SM-A166, MT6835), not tested yet
   - Galaxy S23 (au) (SCG19, SM8550), not tested yet
   - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
+  - Galaxy M36 5G (SM-M366, s5e8835), not tested yet
   - Galaxy A15 5G (SM-A156, MT6835), not tested yet
+  - Galaxy S22+ (Snapdragon) (SM-S906, SM8450), not tested yet
+
+## ColorOS 17, OnePlus Pad 4 build
+
+- File: `OneOS_OxygenOS17_Pad4.img.gz` (5.82 GB)
+- SHA-256: `015852af3c161867f764b47a18008de1d581681e300fac8f358a4e4ed8717183`
+- Download: https://sourceforge.net/projects/oneos-mirror/files/images/OneOS_OxygenOS17_Pad4.img.gz/download
+- Phones:
+  - Galaxy Tab S9 (SM-X710, SM8550), not tested yet
+  - Galaxy Tab S10 FE 5G (SM-X526, s5e8855), not tested yet
+  - Galaxy Tab S10 FE (SM-X520, s5e8855), not tested yet
+  - Galaxy Tab S12 Ultra (SM-X940, MT6993), not tested yet
+  - Galaxy Tab S9 FE+ (SM-X610, s5e8835), not tested yet
+  - Galaxy Tab S9 FE (SM-X510, s5e8835), not tested yet
+  - Galaxy Tab S9 FE 5G (SM-X516, s5e8835), not tested yet
+  - Galaxy Tab S9 Ultra (SM-X910, SM8550), not tested yet
+  - Galaxy Tab S11 (SM-X730, MT6991), not tested yet
+  - Galaxy Tab S11 Ultra (SM-X930, MT6991), not tested yet
 
 ## OriginOS 7, vivo PD2609MA build
 
@@ -405,6 +430,8 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy S23 (SM-S911, SM8550), not tested yet
   - Galaxy S23+ (SM-S916, SM8550), not tested yet
   - Galaxy S26+ (SM-S947, SM8850), not tested yet
+  - Galaxy Z Flip5 (SM-F731, SM8550), not tested yet
+  - Galaxy Z Fold5 (SM-F946, SM8550), not tested yet
   - Galaxy S23 Ultra (SM-S918, SM8550), not tested yet
   - Galaxy S24 (Exynos) (SM-S921, s5e9945), not tested yet
   - Galaxy S25 Edge (SM-S937, SM8750), not tested yet
@@ -467,6 +494,7 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy S23 Ultra (au) (SCG20, SM8550), not tested yet
   - Galaxy S23 (au) (SCG19, SM8550), not tested yet
   - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
+  - Galaxy M36 5G (SM-M366, s5e8835), not tested yet
   - Galaxy S24+ (SM-S926, SM8650), not tested yet
   - Galaxy S26 FE (SM-S741, s5e9955), not tested yet
 
@@ -524,5 +552,64 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy S23 Ultra (au) (SCG20, SM8550), not tested yet
   - Galaxy S23 (au) (SCG19, SM8550)
   - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
+  - Galaxy M36 5G (SM-M366, s5e8835), not tested yet
+  - Galaxy S24+ (SM-S926, SM8650), not tested yet
+  - Galaxy S26 FE (SM-S741, s5e9955), not tested yet
+  - Galaxy Tab S9 (SM-X710, SM8550), not tested yet
+  - Galaxy Tab S10 FE 5G (SM-X526, s5e8855), not tested yet
+  - Galaxy Tab S10 FE (SM-X520, s5e8855), not tested yet
+  - Galaxy Tab S12 Ultra (SM-X940, MT6993), not tested yet
+  - Galaxy Tab S9 FE+ (SM-X610, s5e8835), not tested yet
+  - Galaxy Tab S9 FE (SM-X510, s5e8835), not tested yet
+  - Galaxy Tab S9 FE 5G (SM-X516, s5e8835), not tested yet
+  - Galaxy Tab S9 Ultra (SM-X910, SM8550), not tested yet
+  - Galaxy Tab S11 (SM-X730, MT6991), not tested yet
+  - Galaxy Tab S11 Ultra (SM-X930, MT6991), not tested yet
+
+## PixelOS 17, POCO F7 build
+
+- File: `OneOS_PixelOS17_POCOF7.img.gz` (2.56 GB)
+- SHA-256: `4362ae40bb217d9a51934d5e48f6678d460c0152327f74db654f3c4f9930f7ca`
+- Download: https://sourceforge.net/projects/oneos-mirror/files/images/OneOS_PixelOS17_POCOF7.img.gz/download
+- Phones:
+  - Galaxy S26 Ultra (SM-S948, SM8850), not tested yet
+  - Galaxy S25 Ultra (SM-S938, SM8750), not tested yet
+  - Galaxy S25 (SM-S931, SM8750), not tested yet
+  - Galaxy S25+ (SM-S936, SM8750), not tested yet
+  - Galaxy S26 (SM-S942, SM8850), not tested yet
+  - Galaxy S26 (docomo) (SC-51G, SM8850), not tested yet
+  - Galaxy S24 Ultra (SM-S928, SM8650), not tested yet
+  - Galaxy S24 (SM-S921, SM8650), not tested yet
+  - Galaxy S23 (SM-S911, SM8550), not tested yet
+  - Galaxy S23+ (SM-S916, SM8550), not tested yet
+  - Galaxy S26+ (SM-S947, SM8850), not tested yet
+  - Galaxy S26+ (Exynos) (SM-S947, s5e9965), not tested yet
+  - Galaxy A56 (SM-A566, s5e8855), not tested yet
+  - Galaxy A57 (SM-A576, s5e8865), not tested yet
+  - Galaxy A07 (SM-A075, MT6789), not tested yet
+  - Galaxy A36 (SM-A366, SM6475), not tested yet
+  - Galaxy S23 Ultra (SM-S918, SM8550), not tested yet
+  - Galaxy S24 (Exynos) (SM-S921, s5e9945), not tested yet
+  - Galaxy S25 Edge (SM-S937, SM8750), not tested yet
+  - Galaxy S24 FE (SM-S721, s5e9945), not tested yet
+  - Galaxy A26 (SM-A266, s5e8835), not tested yet
+  - Galaxy A17 (SM-A175, MT6789), not tested yet
+  - Galaxy A16 5G (SM-A166, s5e8535), not tested yet
+  - Galaxy S26 (Exynos) (SM-S942, s5e9965), not tested yet
+  - Galaxy A16 4G (SM-A165, MT6789), not tested yet
+  - Galaxy A16 5G (SM-S166V) (SM-S166, s5e8535), not tested yet
+  - Galaxy A35 5G (SM-A356, s5e8835), not tested yet
+  - Galaxy A54 5G (SM-A546, s5e8835), not tested yet
+  - Galaxy A27 (SM-A276, SM6475), not tested yet
+  - Galaxy A17 5G (SM-A176, s5e8535), not tested yet
+  - Galaxy A15 (SM-A155, MT6789), not tested yet
+  - Galaxy A34 5G (SM-A346, MT6877), not tested yet
+  - Galaxy A55 5G (SM-A556, s5e8845), not tested yet
+  - Galaxy S25 FE (SM-S731, s5e9945), not tested yet
+  - Galaxy S24+ (Exynos) (SM-S926, s5e9945), not tested yet
+  - Galaxy S23 Ultra (au) (SCG20, SM8550), not tested yet
+  - Galaxy S23 (au) (SCG19, SM8550), not tested yet
+  - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
+  - Galaxy M36 5G (SM-M366, s5e8835), not tested yet
   - Galaxy S24+ (SM-S926, SM8650), not tested yet
   - Galaxy S26 FE (SM-S741, s5e9955), not tested yet

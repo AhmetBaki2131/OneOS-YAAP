@@ -348,8 +348,10 @@ jobs:
           VER="${ONEOS_VERSION_NAME}"
           CODE="${ONEOS_VERSION_CODE}"
           REL="${RUNNER_TEMP}/release"
-          NOTES="Automatic signed release **OneOS ${VER}** (versionCode \`${CODE}\`).
+          NOTES="Automatic signed release **OneOS ${VER}** (versionCode \`${CODE}\`, based on upstream OneOS \`v0.5.50\`).
 
+          - Rebased onto upstream [\`fahadalijaved/OneOS\` v0.5.50](https://github.com/fahadalijaved/OneOS/releases/tag/v0.5.50) (PixelOS 17, One UI 9.5 on Android 16/One UI 8, Debloat, Galaxy Tab support, updated overlays & session fixes).
+          - Preserves all Galaxy A05 (\`SM-A055F\` / \`SM-A055M\`), universal custom ROM, and cross-SDK (\`SDK 36\` on \`SDK 37\`) patches.
           - Signed with permanent OneOS-YAAP certificate (\`adbb4b39...bba8c0\`) for seamless in-app auto-updates.
           - Includes \`update.json\` for OneOS self-updater (\`releases/latest/download/update.json\`).
           - Also attaches root-required English \`OneOS-Probe-${VER}.apk\`."

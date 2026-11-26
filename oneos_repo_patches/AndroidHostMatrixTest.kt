@@ -249,4 +249,41 @@ class AndroidHostMatrixTest {
             assertTrue("A15 $label blocks switch", r35.blocked)
         }
     }
+
+    @Test
+    fun galaxyA05OffersPixelOs17AndPreservesUpstreamA17OnA16() {
+        assertEquals(PackageSets.ID_PIXELOS, Profiles.A05.choice(Images.ID_PIXELOS_ONYX)?.packageSetId)
+        assertEquals(PackageSets.ID_PIXELOS, Profiles.A05M.choice(Images.ID_PIXELOS_ONYX)?.packageSetId)
+
+        val a16Host = a05Facts(sdk = 36, oneUiRaw = "80500")
+        val a16Installd = derivationFrom(InstalldExpected.ALLOWED_AOSP_36, shift = 1)
+        val testerProfiles = Profiles.withOneUi95OnA16(Profiles.STABLE)
+        val a05Tester = testerProfiles.first { it.id == Profiles.ID_A05 }
+        assertEquals(PackageSets.ID_ONEUI95_A16, a05Tester.choice(Images.ID_ONEUI95)?.packageSetId)
+
+        val res = SwitchGates.evaluate(
+            GatePhase.SWITCH,
+            GateInput(
+                facts = a16Host,
+                screenLockSet = false,
+                oldSwitcherInstalled = false,
+                installd = a16Installd,
+                stage = StageState(
+                    mounts = emptyList(),
+                    activeBridges = emptyList(),
+                    sessionActive = false,
+                    marker = StageMarker(4, a05Tester.id, Images.ID_ONEUI95, PackageSets.ID_ONEUI95_A16, 1_792_000_000),
+                    filesVerified = true,
+                ),
+                appVersionCode = 4,
+                a17OnA16 = true,
+                allowCustomAospHost = true,
+            ),
+            profiles = testerProfiles,
+        )
+        assertEquals(Level.WARN, res.find(SwitchGates.ID_ANDROID)?.level)
+        assertEquals(SwitchGates.R_ANDROID_EXPERIMENTAL, res.find(SwitchGates.ID_ANDROID)?.finding?.reason)
+        assertEquals(Level.OK, res.find(SwitchGates.ID_INSTALLD)?.level)
+        assertFalse("One UI 9.5 on Android 16 (a17OnA16) must not block", res.blocked)
+    }
 }

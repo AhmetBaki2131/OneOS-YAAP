@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$OneOsRoot = "c:\Users\Baki\Desktop\New folder\OneOS",
     [switch]$DryRun
 )
@@ -181,18 +181,23 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Profiles.kt" `
 @'
     const val ID_M35 = "m35"
+    const val ID_M36 = "m36"
     const val ID_A15_5G = "a15-5g"
+    const val ID_S26_FE = "s26-fe"
 '@ `
 @'
     const val ID_M35 = "m35"
+    const val ID_M36 = "m36"
     const val ID_A15_5G = "a15-5g"
+    const val ID_S26_FE = "s26-fe"
     const val ID_A05 = "a05-f"
     const val ID_A05M = "a05-m"
 '@ "Profiles.kt A05 variant IDs"
 
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Profiles.kt" `
 @'
-    val BUILT_IN: List<PhoneProfile> = listOf(
+    /** Every profile with the choices of a normal build ([BUILT_IN] unless this is a tester build). */
+    val STABLE: List<PhoneProfile> = listOf(
 '@ `
 @'
     /**
@@ -223,16 +228,17 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
         choices = A05.choices.map { it.copy(tested = false) },
     )
 
-    val BUILT_IN: List<PhoneProfile> = listOf(
+    /** Every profile with the choices of a normal build ([BUILT_IN] unless this is a tester build). */
+    val STABLE: List<PhoneProfile> = listOf(
 '@ "Profiles.kt A05 definition"
 
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Profiles.kt" `
 @'
-        A55, S25_FE, S_8450, M55S, S_ULTRA_8450_JP, S_PLUS_9945, S_ULTRA_8550_JP, S_9925, A16_MTK, S_8550_JP, M35, A15_5G, S_PLUS_8650,
+        S26_FE, S_PLUS_8450, TAB_S9, TAB_S10_FE, TAB_S10_FE_WIFI, TAB_S12_ULTRA, TAB_S9_FE_PLUS, TAB_S9_FE, TAB_S9_FE_5G, TAB_S9_ULTRA, TAB_S11, TAB_S11_ULTRA,
 '@ `
 @'
-        A55, S25_FE, S_8450, M55S, S_ULTRA_8450_JP, S_PLUS_9945, S_ULTRA_8550_JP, S_9925, A16_MTK, S_8550_JP, M35, A15_5G, S_PLUS_8650, A05, A05M,
-'@ "Profiles.kt BUILT_IN list"
+        S26_FE, S_PLUS_8450, TAB_S9, TAB_S10_FE, TAB_S10_FE_WIFI, TAB_S12_ULTRA, TAB_S9_FE_PLUS, TAB_S9_FE, TAB_S9_FE_5G, TAB_S9_ULTRA, TAB_S11, TAB_S11_ULTRA, A05, A05M,
+'@ "Profiles.kt STABLE list"
 
 # 3b. Some custom ROM property services return an empty SoC to normal apps even
 # when adb/root can see mt6768. The exact Samsung model + codename pair is unique,
@@ -256,13 +262,13 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 # 4. ApkSeries.kt: register the separate SM-A055F and SM-A055M profiles in S25 series
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\ApkSeries.kt" `
 @'
-            // 0.4.95: the Galaxy M35 5G (One UI 9) and the Galaxy A15 5G with MediaTek (One UI 8.5).
-            Profiles.ID_M35, Profiles.ID_A15_5G,
+            // 0.5.41: the Galaxy Tabs (OxygenOS 17 for tablets, testing).
+            Profiles.ID_TAB_S9, Profiles.ID_TAB_S10_FE, Profiles.ID_TAB_S10_FE_WIFI, Profiles.ID_TAB_S12_ULTRA, Profiles.ID_TAB_S9_FE_PLUS, Profiles.ID_TAB_S9_FE, Profiles.ID_TAB_S9_FE_5G, Profiles.ID_TAB_S9_ULTRA, Profiles.ID_TAB_S11, Profiles.ID_TAB_S11_ULTRA,
         ),
 '@ `
 @'
-            // 0.4.95: the Galaxy M35 5G (One UI 9) and the Galaxy A15 5G with MediaTek (One UI 8.5).
-            Profiles.ID_M35, Profiles.ID_A15_5G,
+            // 0.5.41: the Galaxy Tabs (OxygenOS 17 for tablets, testing).
+            Profiles.ID_TAB_S9, Profiles.ID_TAB_S10_FE, Profiles.ID_TAB_S10_FE_WIFI, Profiles.ID_TAB_S12_ULTRA, Profiles.ID_TAB_S9_FE_PLUS, Profiles.ID_TAB_S9_FE, Profiles.ID_TAB_S9_FE_5G, Profiles.ID_TAB_S9_ULTRA, Profiles.ID_TAB_S11, Profiles.ID_TAB_S11_ULTRA,
             Profiles.ID_A05, Profiles.ID_A05M,
         ),
 '@ "ApkSeries.kt A05"
@@ -270,14 +276,14 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 # 5. InstalldTable.kt: semantic 27 ALLOWED-method verifier for AOSP/YAAP 17 hosts
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\InstalldTable.kt" `
 @'
-    fun problems(derived: InstalldDerivation?, expectedText: String? = null, sdk: Int = 37): List<String> {
+    fun problems(derived: InstalldDerivation?, expectedText: String? = null, sdk: Int = 37, a17OnA16: Boolean = false): List<String> {
         if (derived == null) return listOf("installd table not derived on this phone")
         if (!derived.ok) return listOf("installd table not derived: ${derived.error ?: "no methods"}")
         val p = mutableListOf<String>()
         val expected = expectedText?.let(::nonCommentLines)
         if (expected != null && Hashes.sha256(expected) != carried(sdk)) p += "the app's host_installd.txt is not the pinned table"
         val got = methodLines(derived.methods)
-        val compatible = Hashes.sha256(got) in accepted(sdk)
+        val compatible = Hashes.sha256(got) in accepted(sdk, a17OnA16)
         if (!compatible) p += "this phone's installd table differs from the one the OneOS files carry"
         if (expected != null && got != expected && !compatible) {
             val want = expected.removeSuffix("\n").split('\n').toSet()
@@ -354,6 +360,7 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
         derived: InstalldDerivation?,
         expectedText: String? = null,
         sdk: Int = 37,
+        a17OnA16: Boolean = false,
         allowAospAllowedMatch: Boolean = false,
     ): List<String> {
         if (derived == null) return listOf("installd table not derived on this phone")
@@ -362,7 +369,7 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
         val expected = expectedText?.let(::nonCommentLines)
         if (expected != null && Hashes.sha256(expected) != carried(sdk)) p += "the app's host_installd.txt is not the pinned table"
         val got = methodLines(derived.methods)
-        val compatible = Hashes.sha256(got) in accepted(sdk) ||
+        val compatible = Hashes.sha256(got) in accepted(sdk, a17OnA16) ||
             (allowAospAllowedMatch && sdk == 37 && allowedSubsetCompatible(derived))
         if (!compatible) p += "this phone's installd table differs from the one the OneOS files carry"
         if (expected != null && got != expected && !compatible) {
@@ -378,11 +385,11 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 # 6. Gates.kt: plumb allowCustomAospHost cleanly
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Gates.kt" `
 @'
-    val allowScreenLock: Boolean = false,
+    val a17OnA16: Boolean = Experimental.a17OnA16,
 )
 '@ `
 @'
-    val allowScreenLock: Boolean = false,
+    val a17OnA16: Boolean = Experimental.a17OnA16,
     val allowCustomAospHost: Boolean = false,
 )
 '@ "Gates.kt GateInput field"
@@ -402,13 +409,14 @@ Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\mo
 
 Replace-Exact "app-android\core\model\src\main\kotlin\com\fahadali\oneos\core\model\Gates.kt" `
 @'
-        val p = InstalldExpected.problems(input.installd, if (sdk == 36) input.expectedInstalldA16 else input.expectedInstalld, sdk)
+        val p = InstalldExpected.problems(input.installd, if (sdk == 36) input.expectedInstalldA16 else input.expectedInstalld, sdk, a17)
 '@ `
 @'
         val p = InstalldExpected.problems(
             input.installd,
             if (sdk == 36) input.expectedInstalldA16 else input.expectedInstalld,
             sdk,
+            a17OnA16 = a17,
             allowAospAllowedMatch = input.allowCustomAospHost,
         )
 '@ "Gates.kt InstalldExpected call"
@@ -596,11 +604,13 @@ INSTALLD_SHA_YAAP=1f1b94c0353fb2e69862a0f0411d70576a2bc8609e10c6788b425e0bdc41b8
 Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 @'
         m35) echo "SM-M356 m35x s5e8835 bar" ;;
+        m36) echo "SM-M366 m36x s5e8835 bar" ;;
         a15-5g) echo "SM-A156 a15x MT6835 bar" ;;
         *) return 1 ;;
 '@ `
 @'
         m35) echo "SM-M356 m35x s5e8835 bar" ;;
+        m36) echo "SM-M366 m36x s5e8835 bar" ;;
         a15-5g) echo "SM-A156 a15x MT6835 bar" ;;
         a05-f) echo "SM-A055F a05m MT6768 bar" ;;
         a05-m) echo "SM-A055M a05m MT6768 bar" ;;
@@ -610,7 +620,7 @@ Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
 @'
         "a15-5g oxygenos16-cph2745") echo oxygen16 ;;
-        *) return 1 ;;
+        *) a17_on_a16_set "$1" "$2" ;;
 '@ `
 @'
         "a15-5g oxygenos16-cph2745") echo oxygen16 ;;
@@ -624,7 +634,7 @@ Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
         "a05-m hyperos-lhasa") echo hyper-f8u ;;
         "a05-f nothingos5-asteroids") echo nothing-a ;;
         "a05-m nothingos5-asteroids") echo nothing-a ;;
-        *) return 1 ;;
+        *) a17_on_a16_set "$1" "$2" ;;
 '@ "oneos_root.sh separate A05 variant package sets"
 
 Replace-Exact "app-android\app\src\full\assets\root\oneos_root.sh" `
@@ -844,19 +854,23 @@ fi
 # 18. switcher/assets/guest_prepare.sh, guest_props.sh, oneos_switch.sh: ColorOS 17 Lite & stability optimization for Galaxy A05 (4 GB RAM)
 Replace-Exact "switcher\assets\guest_prepare.sh" `
 @'
-    for d in "$GUEST_SYSTEM_EXT"/priv-app/NTCamera "$ROOTFS"/system/priv-app/NTCamera "$GUEST_PRODUCT"/priv-app/NTCamera; do
-        [ -d "$d" ] && [ ! -L "$d" ] || continue
-        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && \
-            echo "Hid guest ${d#"$ROOTFS"/} (Nothing's camera needs Nothing's camera HAL; $OCWHY; ONEOS_GUEST_OEM_CAMERA=1 keeps it)"
-    done
+    if [ -d "$GUEST_PRODUCT/app/Aperture" ] || [ -d "$GUEST_SYSTEM_EXT/app/Aperture" ]; then
+        for d in "$ROOTFS"/system/priv-app/MiuiCamera "$GUEST_SYSTEM_EXT"/priv-app/MiuiCamera "$GUEST_PRODUCT"/priv-app/MiuiCamera; do
+            [ -d "$d" ] && [ ! -L "$d" ] || continue
+            $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && \
+                echo "Hid guest ${d#"$ROOTFS"/} (Xiaomi's camera checks for its own phone; $OCWHY; ONEOS_GUEST_OEM_CAMERA=1 keeps it)"
+        done
+    fi
 fi
 '@ `
 @'
-    for d in "$GUEST_SYSTEM_EXT"/priv-app/NTCamera "$ROOTFS"/system/priv-app/NTCamera "$GUEST_PRODUCT"/priv-app/NTCamera; do
-        [ -d "$d" ] && [ ! -L "$d" ] || continue
-        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && \
-            echo "Hid guest ${d#"$ROOTFS"/} (Nothing's camera needs Nothing's camera HAL; $OCWHY; ONEOS_GUEST_OEM_CAMERA=1 keeps it)"
-    done
+    if [ -d "$GUEST_PRODUCT/app/Aperture" ] || [ -d "$GUEST_SYSTEM_EXT/app/Aperture" ]; then
+        for d in "$ROOTFS"/system/priv-app/MiuiCamera "$GUEST_SYSTEM_EXT"/priv-app/MiuiCamera "$GUEST_PRODUCT"/priv-app/MiuiCamera; do
+            [ -d "$d" ] && [ ! -L "$d" ] || continue
+            $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && \
+                echo "Hid guest ${d#"$ROOTFS"/} (Xiaomi's camera checks for its own phone; $OCWHY; ONEOS_GUEST_OEM_CAMERA=1 keeps it)"
+        done
+    fi
 fi
 # ColorOS 17 optimization on mid-range / 4 GB RAM phones (Galaxy A05):
 # 1. Missing native library crashes: OplusLocationService crashes repeatedly on missing libaol_jni.oplus.so.
@@ -1009,11 +1023,11 @@ apply() {
 # 19B: patched One UI camera ABI must not be bound on non-One UI hosts (YAAP uses stock AOSP codes).
 Replace-Exact "switcher\assets\guest_prepare.sh" `
 @'
-if [ -f "$STAGE/framework_patched.jar" ]; then
+if [ -f "$STAGE/$CAM_FW" ]; then
     $BB umount -l "$ROOTFS/system/framework/framework.jar" 2>/dev/null || true
 '@ `
 @'
-if [ -f "$STAGE/framework_patched.jar" ] && { [ -f /system/priv-app/imsservice/imsservice.apk ] || [ -e "$GUEST_SYSTEM_EXT/framework/miui-services.jar" ] || [ -e "$ROOTFS/system_ext/framework/miui-services.jar" ]; }; then
+if [ -f "$STAGE/$CAM_FW" ] && { [ -f /system/priv-app/imsservice/imsservice.apk ] || [ -e "$GUEST_SYSTEM_EXT/framework/miui-services.jar" ] || [ -e "$ROOTFS/system_ext/framework/miui-services.jar" ]; }; then
     $BB umount -l "$ROOTFS/system/framework/framework.jar" 2>/dev/null || true
 '@ "guest_prepare.sh framework_patched only on One UI hosts"
 

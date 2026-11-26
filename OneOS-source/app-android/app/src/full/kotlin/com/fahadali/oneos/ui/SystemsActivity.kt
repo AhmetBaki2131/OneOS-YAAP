@@ -35,6 +35,7 @@ import com.fahadali.oneos.core.model.Plain
 import com.fahadali.oneos.core.model.Profiles
 import com.fahadali.oneos.core.model.Units
 import com.fahadali.oneos.core.root.RootProbe
+import com.fahadali.oneos.session.GuestFeatures
 import com.fahadali.oneos.session.LaunchJob
 import com.fahadali.oneos.session.LogJob
 import com.fahadali.oneos.session.OldStagesJob
@@ -139,6 +140,28 @@ internal object SystemsNav {
 
     fun progress(a: Activity) {
         a.startActivity(Intent(a, SetupProgressActivity::class.java))
+    }
+
+    /**
+     * "Download" (0.5.41, owner: "SourceForge for many users is slow but app only takes us there"; "We have gofile
+     * too"): the user picks the mirror, SourceForge (the image's own file, resumable), the Google Drive folder or
+     * the gofile folder; the last pick is offered first next time.
+     */
+    fun download(a: Activity, image: ImageRef) {
+        val prefs = a.getSharedPreferences("download_mirror", Context.MODE_PRIVATE)
+        val mirrors = listOfNotNull(
+            Triple("sourceforge", a.getString(R.string.systems_mirror_sourceforge), image.mirrorUrl),
+            image.downloadUrl?.let { Triple("drive", a.getString(R.string.systems_mirror_drive), it) },
+            Triple("gofile", a.getString(R.string.systems_mirror_gofile), Images.GOFILE_FOLDER_URL),
+        )
+        val last = prefs.getString("last", "sourceforge")
+        val items = mirrors.sortedBy { if (it.first == last) 0 else 1 }
+        AlertDialog.Builder(a).setTitle(a.getString(R.string.systems_mirror_title, image.name))
+            .setItems(items.map { it.second }.toTypedArray()) { _, which ->
+                prefs.edit().putString("last", items[which].first).apply()
+                open(a, items[which].third)
+            }
+            .setNegativeButton(android.R.string.cancel, null).show()
     }
 
     /** "Download": the shared link in the browser (no in-app download). */
@@ -345,8 +368,8 @@ class SystemsFragment : Fragment() {
             if (label != null) {
                 when (plain.action) {
                     FixAction.CHOOSE_FILE -> b.setPositiveButton(label) { _, _ -> a.choose(cardId) }
-                    FixAction.DOWNLOAD_AGAIN -> (id.image ?: card)?.mirrorUrl?.let { url ->
-                        b.setPositiveButton(label) { _, _ -> SystemsNav.open(a, url) }
+                    FixAction.DOWNLOAD_AGAIN -> (id.image ?: card)?.let { img ->
+                        b.setPositiveButton(label) { _, _ -> SystemsNav.download(a, img) }
                     }
                     else -> Unit
                 }
@@ -455,15 +478,20 @@ class SystemsFragment : Fragment() {
         val origin = image(com.fahadali.oneos.core.model.SystemFamily.ORIGINOS, Images.ORIGINOS7)
         val lineage = image(com.fahadali.oneos.core.model.SystemFamily.LINEAGE, Images.LINEAGE24)
         val oneui = image(com.fahadali.oneos.core.model.SystemFamily.ONEUI, Images.ONEUI95)
+        val pixelOs = image(com.fahadali.oneos.core.model.SystemFamily.PIXELOS, Images.PIXELOS_ONYX)
         // OxygenOS 16 (Android 16, 0.4.67) only where the phone can take it (One UI 8), and first there.
         val entries = listOfNotNull(
             // HyperOS 4 Global (0.5.27, tested on the Galaxy A36) first, with its own artwork, on the phones that offer it.
             CatalogEntry(hyperGlobal.shortName, hyperGlobal, R.drawable.os_hyperos_global, true).takeIf { available.any { it.id == hyperGlobal.id } },
-            CatalogEntry(oxygen.name, oxygen, R.drawable.os_oxygenos, true).takeIf { available.any { it.id == oxygen.id } },
+            // 0.5.42: on the tablets this is ColorOS 17 (the Pad 4 build), with ColorOS's artwork.
+            CatalogEntry(oxygen.name, oxygen, if (oxygen.id == Images.ID_OXYGEN17_PAD) R.drawable.os_coloros else R.drawable.os_oxygenos, true)
+                .takeIf { available.any { it.id == oxygen.id } },
             // OriginOS 7 (0.4.73, experimental) only on its phones (the Snapdragon S23 to S26 series, the Exynos S24 and S24+, and Z Fold7/8).
             CatalogEntry(origin.name, origin, R.drawable.os_originos, true).takeIf { available.any { it.id == origin.id } },
             // LineageOS 24 (0.5.06, experimental) only on the phones that offer it.
             CatalogEntry(lineage.name, lineage, R.drawable.os_lineage, true).takeIf { available.any { it.id == lineage.id } },
+            // PixelOS 17 (0.5.35), a custom ROM with a card and artwork of its own (not the Pixel card), only on the phones that offer it.
+            CatalogEntry(pixelOs.name, pixelOs, R.drawable.os_pixelos, true).takeIf { available.any { it.id == pixelOs.id } },
             // One UI 9.5 (0.5.22, untested) only on the phones on One UI 9 that offer it.
             CatalogEntry(oneui.name, oneui, R.drawable.os_oneui, true).takeIf { available.any { it.id == oneui.id } },
             CatalogEntry(infinity.name, infinity, R.drawable.os_infinity, available.any { it.id == infinity.id }),
@@ -597,6 +625,13 @@ class SystemsFragment : Fragment() {
             return v
         }
         val primary = v.findViewById<Button>(R.id.systems_primary)
+        val features = GuestFeatures.forSystem(p, image.id)
+        if (features.isNotEmpty()) {
+            v.findViewById<Button>(R.id.systems_features).apply {
+                visibility = View.VISIBLE
+                setOnClickListener { showGuestFeatureFlags(ctx, image.id, features) }
+            }
+        }
         // The menu follows the card's state (0.5.09): the set-up system offers Start fresh and Remove, a saved
         // copy offers its delete, a system not set up the download and file items. A long press opens it too.
         fun showMenu(anchor: View) {
@@ -605,6 +640,12 @@ class SystemsFragment : Fragment() {
             androidx.appcompat.widget.PopupMenu(ctx, anchor, android.view.Gravity.END).apply {
                 fun details() = menu.add(R.string.catalog_details).setOnMenuItemClickListener {
                     AlertDialog.Builder(ctx).setTitle(image.displayName).setMessage(image.blurb + "\n\n" + image.variant.orEmpty() + "\n" + Units.bytes(image.gzBytes)).setPositiveButton(android.R.string.ok, null).show(); true
+                }
+                if (features.isNotEmpty()) {
+                    menu.add(R.string.system_features).setOnMenuItemClickListener {
+                        showGuestFeatureFlags(ctx, image.id, features)
+                        true
+                    }
                 }
                 when {
                     setUp && !settingUp -> {
@@ -617,10 +658,7 @@ class SystemsFragment : Fragment() {
                         details()
                     }
                     else -> {
-                        menu.add(R.string.systems_download).setOnMenuItemClickListener { SystemsNav.open(host, image.mirrorUrl); true }
-                        image.downloadUrl?.let { drive ->
-                            menu.add(R.string.systems_download_drive).setOnMenuItemClickListener { SystemsNav.open(host, drive); true }
-                        }
+                        menu.add(R.string.systems_download).setOnMenuItemClickListener { SystemsNav.download(host, image); true }
                         menu.add(R.string.systems_have_file).setOnMenuItemClickListener { (host as? SystemsActivity)?.choose(image.id); true }
                         menu.add(R.string.systems_phone_status).setOnMenuItemClickListener {
                             startActivity(Intent(ctx, MainActivity::class.java).putExtra("system_detail", true)); true
@@ -716,7 +754,7 @@ class SystemsFragment : Fragment() {
                 else a.choose(image.id)
             }
             .setNegativeButton(R.string.setup_download_no) { _, _ ->
-                SystemsNav.open(a, image.mirrorUrl)
+                SystemsNav.download(a, image)
             }
             .setNeutralButton(android.R.string.cancel, null).show()
     }

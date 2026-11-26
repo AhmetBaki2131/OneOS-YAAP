@@ -499,7 +499,12 @@ if [ "$LAYOUT_HIDDEN" = 1 ] && [ "${ONEOS_GUEST_FOLD:-layout}" != off ]; then
         # the cover, 1 half open and 2 open on the inner panel (4 and 5, both
         # panels on, left out). Run 43 had only 0 and 3, so its rear display
         # state went to the inner panel. ColorOS keeps Samsung's 0 and 3.
-        if [ -e /system/framework/oplus-services.jar ]; then
+        if [ "${ONEOS_PROFILE:-}" = f8 ] && [ "${ONEOS_GUEST_FORM:-}" = fold ] &&
+           grep -qx 'ro.build.PDA=S948BXXU6ZZKN' /system/build.prop 2>/dev/null; then
+            # Fold8's native states mark CLOSE and TENT as OUTER_PRIMARY.
+            STATES="-1:$INNER:$COVER 0:$COVER:$INNER 1:$COVER:$INNER 3:$INNER:$COVER"
+            LNOTE="Fold8 One UI 9.5: closed and tent use the cover; open uses the inner."
+        elif [ -e /system/framework/oplus-services.jar ]; then
             # Samsung's states from the phone's own device_state_configuration.xml:
             # 0 (lid closed) on the cover, every other one on the inner panel.
             # The Z Fold8 Ultra and Z Fold7 list 0 CLOSE and 3 OPEN; the Z Fold8
@@ -585,6 +590,70 @@ LAYOUT
         # The inner panel's id for the UI activator's density and fold line
         # (oneos_switch.sh, run 44).
         echo "$INNER" > /data/oneos_inner_display; chmod 644 /data/oneos_inner_display
+        # Fold8 One UI 9.5 reports 213 physical dpi for both displays even
+        # when ro.sf.lcd_density is 420. Set a guest WindowManager default
+        # for each physical panel before system_server reads its settings.
+        if [ "${ONEOS_PROFILE:-}" = f8 ] && [ "${ONEOS_GUEST_FORM:-}" = fold ] &&
+           grep -qx 'ro.build.PDA=S948BXXU6ZZKN' /system/build.prop 2>/dev/null; then
+            f8_density=$(getprop ro.sf.lcd_density)
+            case "$f8_density" in
+                [2-6][0-9][0-9]) [ "$f8_density" -ge 240 ] && [ "$f8_density" -le 640 ] || f8_density=420 ;;
+                *) f8_density=420 ;;
+            esac
+            f8_dset=/data/system/display_settings.xml
+            if [ ! -L "$f8_dset" ] && [ ! -L /data/system ] &&
+               f8_temp=$(mktemp -d /data/system/oneos-density.XXXXXX); then
+                f8_input="$f8_temp/input"
+                f8_output="$f8_temp/output"
+                if [ ! -s "$f8_dset" ]; then
+                    printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<display-settings>' '</display-settings>' > "$f8_input"
+                elif [ "$(head -c 3 "$f8_dset")" = ABX ]; then
+                    abx2xml "$f8_dset" "$f8_input" 2>/dev/null || : > "$f8_input"
+                else
+                    cat "$f8_dset" > "$f8_input"
+                fi
+                f8_id_type=$(sed -n 's/.*<config identifier="\([0-9]*\)".*/\1/p' "$f8_input" /vendor/etc/display_settings.xml 2>/dev/null | head -n 1)
+                f8_inner="local:$INNER"; f8_cover="local:$COVER"
+                if [ "$f8_id_type" = 1 ]; then
+                    f8_inner="port:$((INNER % 256))"; f8_cover="port:$((COVER % 256))"
+                fi
+                if awk -v inner="$f8_inner" -v cover="$f8_cover" -v density="$f8_density" '
+                    BEGIN {
+                        panels[1] = inner; panels[2] = cover
+                        policy = " isHomeSupported=\"false\" shouldShowSystemDecors=\"false\""
+                    }
+                    /<display[[:space:]]/ {
+                        for (i = 1; i <= 2; i++) {
+                            key = "name=\"" panels[i] "\""
+                            if (!index($0, key)) continue
+                            seen[i] = 1
+                            # Display 0 always supports Home and system decorations.
+                            # The other internal panel must never start a DeX Home.
+                            gsub(/[[:space:]]+(isHomeSupported|shouldShowSystemDecors)="[^"]*"/, "")
+                            sub(key, key policy)
+                            if ($0 !~ /forcedDensity(Ratio)?=/)
+                                sub(key, key " forcedDensity=\"" density "\"")
+                        }
+                    }
+                    /<\/display-settings>/ {
+                        for (i = 1; i <= 2; i++)
+                            if (!seen[i]) print "    <display name=\"" panels[i] "\"" policy " forcedDensity=\"" density "\" />"
+                        closed = 1
+                    }
+                    { print }
+                    END { if (!closed) exit 1 }
+                ' "$f8_input" > "$f8_output" &&
+                   chown 1000:1000 "$f8_output" && chmod 600 "$f8_output" &&
+                   "$BB" chcon u:object_r:system_data_file:s0 "$f8_output" &&
+                   mv -f "$f8_output" "$f8_dset"; then
+                    echo "[Pivoted Root] Fold8 One UI 9.5: $f8_density dpi defaults for $f8_inner and $f8_cover"
+                else
+                    echo "[Pivoted Root] Fold8 One UI 9.5: display density defaults not written"
+                fi
+                rm -f "$f8_input" "$f8_output"
+                rmdir "$f8_temp"
+            fi
+        fi
         # vivo in fold mode 1 (ro.vivo.device.type=foldable): the inner panel as vivo's
         # main panel (patches/vivo_guards.py, OneOSVivoPrimaryDisplay). SurfaceFlinger
         # named the cover primary at boot and the inner panel's brightness never
@@ -660,8 +729,11 @@ for id in $(dumpsys SurfaceFlinger --display-id 2>/dev/null | sed -n 's/^Display
     [ $# = 4 ] || { echo "display $id: no modes in the dump, left alone"; continue; }
     # Each call waits on SurfaceFlinger's main thread: never longer than 5 s.
     [ "$3" = -1 ] || { timeout 5 service call SurfaceFlinger 1035 i32 "$3" i64 "$id" f "$4" f "$4" >/dev/null 2>&1; sleep 0.4; }
-    r=$(timeout 5 service call SurfaceFlinger 1035 i32 "$1" i64 "$id" f "$2" f "$2" 2>&1 | tr -s ' \n' ' ' | cut -c1-120)
-    echo "display $id: through mode $3 ($4 Hz) to mode $1, pinned at $2 Hz: $r"
+    # 0.5.35 adaptive (/data/oneos_adaptive, oneos_switch.sh): the panel stays at its top mode, rendering may go down
+    # to the other mode's rate on a still screen. Otherwise [top, top].
+    lo=$2; [ -f /data/oneos_adaptive ] && [ "$4" -ge 48 ] && [ "$4" -lt "$2" ] && lo=$4
+    r=$(timeout 5 service call SurfaceFlinger 1035 i32 "$1" i64 "$id" f "$lo" f "$2" 2>&1 | tr -s ' \n' ' ' | cut -c1-120)
+    echo "display $id: through mode $3 ($4 Hz) to mode $1, pinned at $2 Hz, rendering $lo-$2: $r"
     n=$((n + 1))
 done
 [ "$n" -gt 0 ] || echo "no physical displays listed yet"
@@ -719,6 +791,13 @@ LEDBL=0
 # 928: about 135 nits on a Fold's inner panel (max/4 was ~660 nits); 40% of a smaller range.
 BLMAX=$(cat $BL/max_brightness 2>/dev/null); BLON=928
 case "$BLMAX" in ''|*[!0-9]*) [ $LEDBL = 1 ] && { BLMAX=255; BLON=102; } ;; *) [ "$BLMAX" -lt 928 ] && BLON=$((BLMAX * 2 / 5)) ;; esac
+# The cover panel's own bridge: the Galaxy Z Fold4 as a fold only (pull request
+# #361, jinkun1998: OxygenOS 16 left the cover at one dim level). Every other
+# phone passes no cover node, and its bridge is the one described below.
+BL2MAX=$(cat $BL2/max_brightness 2>/dev/null)
+case "$BL2MAX" in ''|*[!0-9]*) BL2MAX=$BLMAX ;; esac
+BLCOVER=""
+[ "${ONEOS_PROFILE:-}" = f4 ] && [ "${ONEOS_GUEST_FORM:-fold}" = fold ] && [ $LEDBL = 0 ] && [ -w "$BL2/brightness" ] && BLCOVER=$BL2
 echo "[Pivoted Root] Backlight: inner=$(cat $BL/brightness 2>/dev/null) cover=$(cat $BL2/brightness 2>/dev/null)$([ $LEDBL = 1 ] && echo " (LED $BL, max ${BLMAX:-?})")"
 # A Fold switched while folded has the inner panel at 0 and the cover lit:
 # the cover is the one kept lit then (guest_props.sh puts the boot animation
@@ -769,16 +848,29 @@ fi
 # its sunlight boost, so the guest's normal range ends at 255 and only its own
 # boost goes above. Asleep: 0 on the LED (it has no other off switch), nothing on
 # a panel node; dozing: 1/20. Ends with the guest.
+# The Galaxy Z Fold4 (profile f4, as a fold; 0.5.38, pull request #361) also
+# gets the cover panel: the same watch on the inner node (a folded phone, cover
+# lit, never counts as a dead one), and when the lights HAL drives the inner
+# panel the bridge stays for the cover alone, copying the guest's brightness to
+# whichever panel is in use.
 # ONEOS_GUEST_LED_BRIDGE=0 / ONEOS_GUEST_BL_BRIDGE=0: off.
 BRIDGE=0
 case "${ONEOS_GUEST_BL_BRIDGE:-1}" in force) BLFORCE=1 ;; *) BLFORCE=0 ;; esac
 if [ $LEDBL = 1 ]; then [ "${ONEOS_GUEST_LED_BRIDGE:-1}" = 1 ] && BRIDGE=1
-elif [ "${ONEOS_GUEST_BL_BRIDGE:-1}" != 0 ] && [ "$BL" = /sys/class/backlight/panel ] && [ -w "$BL/brightness" ]; then
-    case "$BLMAX" in ''|*[!0-9]*) ;; *) BRIDGE=1 ;; esac
+elif [ "${ONEOS_GUEST_BL_BRIDGE:-1}" != 0 ] && [ -w "$BL/brightness" ]; then
+    if [ "$BL" = /sys/class/backlight/panel ] || [ -n "$BLCOVER" ]; then
+        case "$BLMAX" in ''|*[!0-9]*) ;; *) BRIDGE=1 ;; esac
+    fi
 fi
+# The Galaxy Tab S9 FE only (pull request #371, its Himax TDDI panel): the bridge polls the panel's dpms node and
+# runs at 0.2 s; every other phone keeps the 1 s loop.
+BLFAST=0
+case "${ONEOS_PROFILE:-}:$(getprop ro.product.model)" in tab-s9-fe:*|tab-s9-fe-5g:*|*:SM-X51*) BLFAST=1 ;; esac
 if [ $BRIDGE = 1 ]; then
     cat > /data/oneos_bl_bridge.sh <<'BLEOF'
-BL=$1; MAX=$2; ON=$3; LED=$4
+BL=$1; MAX=$2; ON=$3; LED=$4; BL2=$5; MAX2=$6; FAST=${7:-0}
+# DUAL: a cover panel node passed (the Galaxy Z Fold4 only, see guest_start.sh).
+DUAL=0; [ -n "$BL2" ] && [ -w "$BL2/brightness" ] && DUAL=1
 case "${ONEOS_GUEST_BL_BRIDGE:-1}" in force) BLFORCE=1 ;; *) BLFORCE=0 ;; esac
 i=0
 while [ "$(getprop service.bootanim.exit)" != 1 ] && [ $i -lt 600 ]; do sleep 1; i=$((i + 1)); done
@@ -797,6 +889,7 @@ force=$(echo "$D" | sed -n 's/^useSurfaceControl=[a-z]* (force_anyway? \([a-z]*\
 lo=$(echo "$D" | sed -n 's/^mScreenBrightnessRangeMinimum=//p' | head -n 1)
 hi=$(echo "$D" | sed -n 's/^mScreenBrightnessRangeMaximum=//p' | head -n 1)
 nm=$(echo "$D" | sed -n 's/^mScreenBrightnessNormalMaximum=//p' | head -n 1)
+TAKE_BL=1
 if [ "$LED" != 1 ] && [ "${BLFORCE:-0}" = 1 ]; then
     # ONEOS_GUEST_BL_BRIDGE=force skips the watch entirely: for a stage whose
     # HAL thrashes the node instead of sticking at 0 (HyperOS on the A15,
@@ -813,11 +906,22 @@ elif [ "$LED" != 1 ] && { [ "$usc" != false ] || [ "$force" != true ]; }; then
     # 15 s in a row while the screen is awake and asks for light (a real
     # minimum is a wish, not a dead HAL), and give up after 600 s if the node
     # moves on its own. Healthy systems never see the takeover.
-    echo "$(date +%T) brightness bridge: watching $BL (useSurfaceControl=${usc:-not read}, force_anyway=${force:-not read}; takes over after 15 s of a dead node)"
+    # 0.5.34: or when the HAL refuses the guest's brightness outright. HyperOS on the Galaxy A16 4G (report
+    # f036b5fa, "brightness not fixed"): Samsung's lights HAL answered every MiuiLightsService.setBrightness
+    # with UnsupportedOperationException ("Failed issuing setLightState", 50 times), the node stayed at the
+    # host's last level (not 0), and after 600 s the watch gave the panel to a HAL that never wrote it.
+    # Three such refusals take the node over too.
+    echo "$(date +%T) brightness bridge: watching $BL (useSurfaceControl=${usc:-not read}, force_anyway=${force:-not read}; takes over after 15 s of a dead node or 3 refusals of the lights HAL)"
+    rm -f /data/oneos_bl_refused
+    ( timeout 600 logcat -v brief -T 1 -s LightsService:E 2>/dev/null | grep --line-buffered -F "Failed issuing setLightState" | head -n 3 > /data/oneos_bl_refused ) &
+    RMON=$!
     n=0; i=0
     while [ $i -lt 600 ]; do
         i=$((i + 1)); sleep 1
+        if [ "$(wc -l < /data/oneos_bl_refused 2>/dev/null)" -ge 3 ] 2>/dev/null; then n=15; refused=1; break; fi
         [ "$(cat $BL/brightness 2>/dev/null)" = 0 ] || { n=0; continue; }
+        # Folded (the cover lit): the inner panel is meant to be dark.
+        [ "$DUAL" = 1 ] && [ "$(cat $BL2/brightness 2>/dev/null || echo 0)" != 0 ] && { n=0; continue; }
         case "$(dumpsys power 2>/dev/null | sed -n 's/^ *mWakefulness=//p' | head -n 1)" in
             Awake) ;;
             *) n=0; continue ;;
@@ -829,11 +933,19 @@ elif [ "$LED" != 1 ] && { [ "$usc" != false ] || [ "$force" != true ]; }; then
         [ "$light" = 1 ] && n=$((n + 1)) || n=0
         [ $n -ge 15 ] && break
     done
+    kill $RMON 2>/dev/null
     if [ $n -lt 15 ]; then
-        echo "$(date +%T) brightness bridge: the node moved on its own after $i s; leaving it to the lights HAL"
-        exit 0
+        echo "$(date +%T) brightness bridge: inner node moved on its own after $i s; leaving it to the lights HAL"
+        TAKE_BL=0
+        [ "$DUAL" = 1 ] || exit 0
+    else
+        if [ "${refused:-0}" = 1 ]; then
+            echo "$(date +%T) brightness bridge: the lights HAL refuses the guest's brightness (3x Failed issuing setLightState after $i s); taking the node over"
+        else
+            echo "$(date +%T) brightness bridge: the lights HAL does not reach the panel (node 0, awake and asking for light for 15 s); taking the node over"
+        fi
+        TAKE_BL=1
     fi
-    echo "$(date +%T) brightness bridge: the lights HAL does not reach the panel (node 0, awake and asking for light for 15 s); taking the node over"
 fi
 # A level scale when the range ends above 1 (ColorOS, OxygenOS); else 0..1.
 SCALE=$(echo "${lo:-x} ${hi:-x} ${nm:-x}" | awk '{ t = $3; if (t !~ /^[0-9.]+$/) t = $2
@@ -841,44 +953,156 @@ SCALE=$(echo "${lo:-x} ${hi:-x} ${nm:-x}" | awk '{ t = $3; if (t !~ /^[0-9.]+$/)
 case "$nm" in ''|*[!0-9.]*) nm=$hi ;; esac
 NORM=$MAX
 [ "$LED" = 1 ] || [ "$MAX" -le 255 ] || NORM=255
-echo "$(date +%T) brightness bridge: $BL (max $MAX, the guest's full slider = $NORM; scale $SCALE ${lo:-?}..${nm:-?}..${hi:-?}; useSurfaceControl=${usc:-not read}, force_anyway=${force:-not read})"
-last=""; pw=""
+NORM2=$MAX2
+case "$NORM2" in ''|*[!0-9]*) NORM2=$NORM ;; *) [ "$NORM2" -gt 255 ] && NORM2=255 ;; esac
+echo "$(date +%T) brightness bridge: inner $BL (max $MAX, slider $NORM, take $TAKE_BL); cover ${BL2:-none} (max ${MAX2:-?}, slider $NORM2); scale $SCALE ${lo:-?}..${nm:-?}..${hi:-?}; useSurfaceControl=${usc:-not read}, force_anyway=${force:-not read}"
+DPMS=""; SLP=1
+[ "$FAST" = 1 ] && { DPMS=/sys/class/drm/card0-DSI-1/dpms; SLP=0.2; }
+last=""; last2=""; pw=""; pdp=""; tick=5
+prev_folded=0
+if [ "$DUAL" = 1 ]; then
+    [ "$(cat $BL/brightness 2>/dev/null)" = 0 ] && [ "$(cat $BL2/brightness 2>/dev/null || echo 0)" != 0 ] && prev_folded=1
+fi
 while :; do
+    dp=""; [ -r "$DPMS" ] && read -r dp < "$DPMS" 2>/dev/null
+    if [ "$dp" != "$pdp" ]; then
+        pdp=$dp; last=""; tick=5
+    fi
+    if [ "$FAST" = 1 ] && [ $tick -lt 5 ]; then
+        tick=$((tick + 1)); sleep 0.2; continue
+    fi
+    tick=0
     w=$(timeout 3 dumpsys power 2>/dev/null | sed -n 's/^ *mWakefulness=//p' | head -n 1)
-    [ "$w" = "$pw" ] || last=""
+    [ "$w" = "$pw" ] || { last=""; last2=""; }
     pw=$w
+    is_folded=0
+    if [ "$DUAL" = 1 ]; then
+        d2=""
+        [ -r /sys/class/drm/card0-DSI-2/dpms ] && read -r d2 < /sys/class/drm/card0-DSI-2/dpms
+        d1=""
+        [ -r /sys/class/drm/card0-DSI-1/dpms ] && read -r d1 < /sys/class/drm/card0-DSI-1/dpms
+        case "$d2" in
+            On|on) is_folded=1 ;;
+            Off|off)
+                case "$d1" in
+                    On|on) is_folded=0 ;;
+                    *)
+                        if [ -r /data/oneos_dt2w_lid ]; then
+                            read -r lid < /data/oneos_dt2w_lid
+                            [ "$lid" = 1 ] && is_folded=1
+                        elif [ -r /sys/class/sec/tsp2/enabled ]; then
+                            read -r t2 < /sys/class/sec/tsp2/enabled
+                            [ "$t2" = 1 ] && is_folded=1
+                        else
+                            is_folded=$prev_folded
+                        fi
+                        ;;
+                esac
+                ;;
+            *)
+                if [ -r /data/oneos_dt2w_lid ]; then
+                    read -r lid < /data/oneos_dt2w_lid
+                    [ "$lid" = 1 ] && is_folded=1
+                elif [ -r /sys/class/sec/tsp2/enabled ]; then
+                    read -r t2 < /sys/class/sec/tsp2/enabled
+                    [ "$t2" = 1 ] && is_folded=1
+                else
+                    is_folded=$prev_folded
+                fi
+                ;;
+        esac
+        prev_folded=$is_folded
+    fi
     case "$w" in
-        Asleep) if [ "$LED" = 1 ]; then v=0; else v=""; fi ;;
-        Dozing) v=$((NORM / 20 + 1)) ;;
+        Asleep)
+            if [ "$LED" = 1 ] || [ "$dp" = Off ]; then v=0; else v=""; fi
+            v2=0
+            ;;
+        Dozing)
+            v=$((NORM / 20 + 1))
+            v2=$((NORM2 / 20 + 1))
+            ;;
         Awake)
-            f=$(timeout 3 cmd display get-brightness 0 2>/dev/null | head -n 1)
-            v=$(echo "$f" | awk -v m="$MAX" -v n="$NORM" -v lo="$lo" -v nm="$nm" -v hi="$hi" -v s="$SCALE" '
-                {
-                    # The first field that is a number (AOSP prints the bare value).
-                    x = -1
-                    for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]*[.]?[0-9]+(E-?[0-9]+)?$/) { x = $i + 0; break }
-                    if (x <= 0) exit
-                    if (s == "level") {
-                        if (x <= nm) { p = (x - lo) / (nm - lo); if (p < 0) p = 0; y = 1 + p * (n - 1) }
-                        else { p = (hi > nm) ? (x - nm) / (hi - nm) : 1; if (p > 1) p = 1; y = n + p * (m - n) }
-                    } else {
-                        if (x > 1) exit
-                        y = x * n
-                    }
-                    y = int(y + 0.5); if (y < 1) y = 1; if (y > m) y = m; print y; exit
-                }')
-            if [ -z "$v" ] && [ "$LED" = 1 ]; then v=$ON; fi ;;
-        *) v="" ;;
+            if [ "$is_folded" = 1 ] && [ "$DUAL" = 1 ]; then
+                f2=$(timeout 3 cmd display get-brightness 1 2>/dev/null | head -n 1)
+                case "$f2" in
+                    ''|*'-1'*|*[!0-9.eE+-]*)
+                        f2=$(timeout 3 cmd display get-brightness 0 2>/dev/null | head -n 1)
+                        ;;
+                esac
+                case "$f2" in
+                    ''|*'-1'*|*[!0-9.eE+-]*)
+                        # The setting is 0..255, or a level already where it is larger;
+                        # on a level scale 0..255 becomes the guest's own lo..normal range
+                        # (as a fraction it read as below lo there: the cover stuck at 1).
+                        sb=$(settings get system screen_brightness 2>/dev/null)
+                        case "$sb" in
+                            ''|*[!0-9]*) ;;
+                            *) f2=$(awk -v s="$sb" -v sc="$SCALE" -v lo="$lo" -v nm="$nm" 'BEGIN {
+                                   if (sc != "level") printf "%.4f", s / 255.0
+                                   else if (s > 255) print s
+                                   else printf "%.4f", lo + s / 255.0 * (nm - lo) }') ;;
+                        esac
+                        ;;
+                esac
+                v2=$(echo "$f2" | awk -v m="$MAX2" -v n="$NORM2" -v lo="$lo" -v nm="$nm" -v hi="$hi" -v s="$SCALE" '
+                    {
+                        x = -1
+                        for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]*[.]?[0-9]+(E-?[0-9]+)?$/) { x = $i + 0; break }
+                        if (x <= 0) exit
+                        if (s == "level") {
+                            if (x <= nm) { p = (x - lo) / (nm - lo); if (p < 0) p = 0; y = 1 + p * (n - 1) }
+                            else { p = (hi > nm) ? (x - nm) / (hi - nm) : 1; if (p > 1) p = 1; y = n + p * (m - n) }
+                        } else {
+                            if (x > 1) exit
+                            y = x * n
+                        }
+                        y = int(y + 0.5); if (y < 1) y = 1; if (y > m) y = m; print y; exit
+                    }')
+                v=0
+            else
+                v2=0
+                f=$(timeout 3 cmd display get-brightness 0 2>/dev/null | head -n 1)
+                v=$(echo "$f" | awk -v m="$MAX" -v n="$NORM" -v lo="$lo" -v nm="$nm" -v hi="$hi" -v s="$SCALE" '
+                    {
+                        x = -1
+                        for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]*[.]?[0-9]+(E-?[0-9]+)?$/) { x = $i + 0; break }
+                        if (x <= 0) exit
+                        if (s == "level") {
+                            if (x <= nm) { p = (x - lo) / (nm - lo); if (p < 0) p = 0; y = 1 + p * (n - 1) }
+                            else { p = (hi > nm) ? (x - nm) / (hi - nm) : 1; if (p > 1) p = 1; y = n + p * (m - n) }
+                        } else {
+                            if (x > 1) exit
+                            y = x * n
+                        }
+                        y = int(y + 0.5); if (y < 1) y = 1; if (y > m) y = m; print y; exit
+                    }')
+                if [ -z "$v" ] && [ "$LED" = 1 ]; then v=$ON; fi
+            fi
+            ;;
+        *) v=""; v2="" ;;
     esac
-    if [ -n "$v" ] && [ "$v" != "$last" ]; then
-        echo $v > $BL/brightness && echo "$(date +%T) $w: $v"
+    if [ "$is_folded" = 1 ] && [ "$DUAL" = 1 ]; then
+        if [ "$last" != 0 ] && [ "$TAKE_BL" = 1 ]; then
+            echo 0 > $BL/brightness 2>/dev/null
+            last=0
+        fi
+    elif [ "$TAKE_BL" = 1 ] && [ -n "$v" ] && [ "$v" != "$last" ]; then
+        echo $v > $BL/brightness && echo "$(date +%T) inner $w: $v"
         last=$v
     fi
-    sleep 1
+    if [ "$DUAL" = 1 ]; then
+        if [ -n "$v2" ] && [ "$v2" != "$last2" ]; then
+            echo $v2 > $BL2/brightness && echo "$(date +%T) cover $w: $v2"
+            last2=$v2
+        fi
+    fi
+    sleep $SLP
 done
 BLEOF
-    $BB sh /data/oneos_bl_bridge.sh "$BL" "$BLMAX" "$BLON" "$LEDBL" </dev/null >> /data/backlight.log 2>&1 &
+    $BB sh /data/oneos_bl_bridge.sh "$BL" "$BLMAX" "$BLON" "$LEDBL" "$BLCOVER" "$BL2MAX" "$BLFAST" </dev/null >> /data/backlight.log 2>&1 &
     if [ $LEDBL = 1 ]; then echo "[Pivoted Root] Backlight: LED bridge started for $BL"
+    elif [ -n "$BLCOVER" ]; then echo "[Pivoted Root] Backlight: dual-panel brightness bridge started for inner $BL and cover $BL2; see backlight.log"
     else echo "[Pivoted Root] Backlight: brightness bridge started for $BL (it runs only if the composer refuses brightness and the system does not use the lights HAL; see backlight.log)"; fi
 fi
 
@@ -1133,6 +1357,9 @@ fi
 # started here and watched alongside the boot: if it has not registered after
 # 60 s, or keeps dying, Samsung's audioserver takes over (AudioService waits
 # for the policy service without a timeout).
+# The Galaxy Tab S9 FE only (pull request #371): real-time priority for the guest audioserver, and One UI guests keep Dolby to SoundAlive (marker file).
+rm -f /data/oneos_audio_rt
+case "${ONEOS_PROFILE:-}:$(getprop ro.product.model)" in tab-s9-fe:*|tab-s9-fe-5g:*|*:SM-X51*) : > /data/oneos_audio_rt ;; esac
 if [ -f /data/guest_audio.flag ]; then
     echo "[Pivoted Root] Starting guest audioserver..."
     mkdir -p /data/misc/audioserver && chown 1041:1005 /data/misc/audioserver && chmod 0700 /data/misc/audioserver
@@ -1295,7 +1522,7 @@ if [ -f /data/guest_audio.flag ]; then
             done' oneos_a2dp_watch "$BB" >> /data/oneos_a2dp.log 2>&1 &
         echo "[Pivoted Root] A2DP: Bluetooth stream watch on (the HAL has a bluetooth module; /data/oneos_a2dp.log)"
     fi
-    /system/bin/audioserver > /dev/null 2>&1 &
+    ([ -f /data/oneos_audio_rt ] && ulimit -r 99 2>/dev/null; exec /system/bin/audioserver) > /dev/null 2>&1 &
     AS_PID=$!
     echo "[Pivoted Root] guest audioserver PID: $AS_PID (registers once the guest framework is up)"
     echo "=== $(date '+%F %T') session: guest audioserver $AS_PID" >> /data/audio_keeper.log
@@ -1328,7 +1555,7 @@ if [ -f /data/guest_audio.flag ]; then
             if ! kill -0 $as 2>/dev/null; then
                 [ $d -lt 3 ] || break
                 d=$((d + 1)); sleep 2; t=$((t + 2))
-                /system/bin/audioserver > /dev/null 2>&1 & as=$!
+                ([ -f /data/oneos_audio_rt ] && ulimit -r 99 2>/dev/null; exec /system/bin/audioserver) > /dev/null 2>&1 & as=$!
                 echo "$(date +%T) guest audioserver died before it registered (${t}s); started again as $as ($d of 3)"
                 continue
             fi
@@ -1371,6 +1598,26 @@ if [ -f /data/guest_audio.flag ]; then
         # 7, 23 and 27 minutes, the fifth handed over to Samsung audioserver, whose
         # product strategies carry Samsung usage 1005; a Pixel AudioService throws
         # Invalid usage 1005 and system_server died).
+        # 0.5.50 (S22 Ultra Exynos 0158cc4a, 0.5.49): the app ops rule and a force-stop were not enough. The system
+        # binds the Google app again as the voice assistant, it loaded its Hey Google model again within seconds,
+        # the Exynos 2200 voice trigger DSP (VTS) died three more times and then hung the bus: the debug watchdog
+        # reset the phone mid setup (reset BUS CHUBVTS, WDGC debug-wdt). So the Google app also loses the
+        # assistant role (no voice interaction service, no keyphrase model) and Samsung Bixby wake-up is turned
+        # off; on the Exynos 2200 (s5e9925) this is done before the first model load, at the start.
+        # ONEOS_GUEST_HOTWORD_KEEP=1 keeps all of it.
+        hotword_off() {
+            g=com.google.android.googlequicksearchbox
+            o=$(/system/bin/sh /data/oneos_genv.sh /system/bin/cmd appops set $g RECORD_AUDIO_HOTWORD ignore 2>&1 | tr -s " \n" " " | head -c 80)
+            /system/bin/sh /data/oneos_genv.sh /system/bin/cmd role remove-role-holder --user 0 android.app.role.ASSISTANT $g >/dev/null 2>&1
+            /system/bin/sh /data/oneos_genv.sh /system/bin/settings put secure voice_interaction_service "" >/dev/null 2>&1
+            /system/bin/sh /data/oneos_genv.sh /system/bin/pm disable-user --user 0 com.samsung.android.bixby.wakeup >/dev/null 2>&1
+            /system/bin/sh /data/oneos_genv.sh /system/bin/am force-stop $g >/dev/null 2>&1
+        }
+        if [ "${ONEOS_GUEST_HOTWORD_KEEP:-0}" != 1 ] && [ ! -f /data/oneos_hotword_off.log ] &&
+           { getprop ro.soc.model; getprop ro.hardware; getprop ro.board.platform; } 2>/dev/null | grep -qi "s5e9925"; then
+            hotword_off
+            echo "$(date +%T) Exynos 2200 (s5e9925): voice wake-up off before the first model load (assistant role, Hey Google hotword, Bixby wake-up; the VTS DSP reset the phone on 0.5.49)" | tee /data/oneos_hotword_off.log
+        fi
         miss=0; r=0; last=0
         while [ -f /data/guest_audio.flag ]; do
             sleep 3
@@ -1380,6 +1627,26 @@ if [ -f /data/guest_audio.flag ]; then
             miss=$((miss + 1)); [ $miss -lt 2 ] && continue
             kill -9 $as 2>/dev/null
             now=$(date +%s); [ $((now - last)) -gt 120 ] && r=0; last=$now
+            # 0.5.45 (S23 FE One UI 8.5 8a093c12, d6be5a01): the Google app voice match model (110628 bytes) is
+            # larger than the VTS buffer of the Exynos sound trigger HAL (0x16800), which then died in
+            # vts_load_sound_model at every start of recognition, the audio HAL with it, every 75 s (17 deaths,
+            # no sound for most of the session). Once that is in the crash log: no DSP hotword for the Google app
+            # in this guest (RECORD_AUDIO_HOTWORD ignore, kept in its app ops; SoundTriggerHelper then starts no
+            # recognition) and the app stopped so it attaches again under that rule.
+            # 0.5.47 (Galaxy A17 MediaTek dcea6a06, 0.5.46): the same on MediaTek. The Google model (115700 bytes)
+            # failed in mtk_load_sound_model (IOCTL VOW_SET_SPEAKER_MODEL ERR) and the audio HAL died right after,
+            # about every minute (22 audioserver deaths; Telegram stopped responding waiting for audio, then the
+            # guest system died). Its HAL leaves no tombstone, so the error line in the main log is the sign.
+            hw=""
+            if [ ! -f /data/oneos_hotword_off.log ]; then
+                if logcat -d -b crash 2>/dev/null | grep -q "(vts_load_sound_model+"; then hw=vts_load_sound_model
+                elif logcat -d -b main -s sound_trigger_hw_default:E 2>/dev/null | grep -q "VOW_SET_SPEAKER_MODEL ERR"; then hw=mtk_load_sound_model
+                fi
+            fi
+            if [ -n "$hw" ]; then
+                hotword_off "$hw"
+                echo "$(date +%T) audio HAL died loading a voice wake-up model ($hw): Hey Google DSP hotword off for $g ($o)" | tee /data/oneos_hotword_off.log
+            fi
             # 0.4.60: no hand-over after registration. Every guest framework is not
             # Samsung, and Samsung audioserver killed it (Invalid usage 1005; 0.4.59
             # Pixel reports 2c9c6419, 630e5625, 7fe453b5: a sound model Samsung sound
@@ -1405,7 +1672,7 @@ if [ -f /data/guest_audio.flag ]; then
                 sleep 1
                 echo "$(date +%T) audio HAL services restarted for the new audioserver: $hs"
             fi
-            /system/bin/audioserver > /dev/null 2>&1 & as=$!; miss=0; r=$((r + 1))
+            ([ -f /data/oneos_audio_rt ] && ulimit -r 99 2>/dev/null; exec /system/bin/audioserver) > /dev/null 2>&1 & as=$!; miss=0; r=$((r + 1))
             echo "$(date +%T) guest audioserver $why, restarted as $as"
             ( n=0; while [ $n -lt 30 ] && [ "$(owner)" != "$as" ]; do sleep 2; n=$((n + 1)); done; unsusp ) &
         done' sh "$AS_PID" </dev/null >> /data/audio_keeper.log 2>&1 &
@@ -1486,8 +1753,36 @@ if [ -f /data/guest_audio.flag ] && [ "${ONEOS_GUEST_CALL_SIM:-1}" != 0 ]; then
                 echo "$(date +%T) vendor audio library search: cached for this vendor build"
             fi
             if [ -z "$lib" ]; then
-                echo "$(date +%T) no vendor audio library has g_call_sim_slot and updateSecVSID: SIM slot loop off"
-                exit 0
+                # 0.5.40, the Galaxy S24 Ultra (the newer Qualcomm audio HAL, "AHAL: AudioVoice"; ColorOS
+                # e9377958: a call on SIM 2 started on VSID_1 0x11C05000 and was silent): that HAL takes
+                # the Qualcomm voice keys, "vsid=<session>;call_state=<1 inactive, 2 active>", read
+                # together (AudioVoice::VoiceSetParameters). During a call on SIM slot 2 the session
+                # moves to VSID_2 0x11DC5000 (started first, then VSID_1 stopped); the HAL ends both
+                # when the mode goes back to normal. Through the guest AudioSystem (OneOSAudioParam).
+                q=$(grep -l -s -F VoiceSetParameters /vendor/lib64/*audio*.so /vendor/lib64/hw/*audio*.so /vendor/bin/hw/*audio* 2>/dev/null | head -n 1)
+                if [ -z "$q" ] || ! grep -q -s -F call_state "$q" || ! grep -q -s -F vsid "$q"; then
+                    echo "$(date +%T) no vendor audio library has g_call_sim_slot and updateSecVSID: SIM slot loop off"
+                    exit 0
+                fi
+                echo "$(date +%T) Qualcomm voice keys (vsid, call_state) in $q: SIM slot 2 calls moved to VSID_2"
+                qset() { /system/bin/sh /data/oneos_genv.sh /system/bin/env CLASSPATH=/data/oneos_edm_stub.dex /system/bin/app_process /system/bin OneOSAudioParam "$1" 2>&1 | tr -s " \n" " " | head -c 100; }
+                moved=""
+                while true; do
+                    sleep 1
+                    [ -f /data/guest_audio.flag ] || continue
+                    st=$(dumpsys telephony.registry 2>/dev/null | $bb awk -F= "/^ *Phone Id=/ { p = \$2 } /^ *mCallState=/ { print p \":\" \$2 }")
+                    off=""
+                    for e in $st; do [ "${e#*:}" = 2 ] && off=${e%:*}; done
+                    if [ -z "$off" ]; then
+                        [ -z "$moved" ] || echo "$(date +%T) call ended (VSID_2 session closes with the normal mode)"
+                        moved=""; continue
+                    fi
+                    [ "$off" = 1 ] && [ -z "$moved" ] || continue
+                    moved=1
+                    echo "$(date +%T) call on SIM slot 1 (SIM 2): vsid=299651072;call_state=2 -> $(qset "vsid=299651072;call_state=2"); vsid=297816064;call_state=1 -> $(qset "vsid=297816064;call_state=1")"
+                    sleep 1
+                    logcat -d -t 200 -s AHAL 2>/dev/null | $bb grep -E "UpdateCalls|VoiceSetParameters" | tail -n 3
+                done
             fi
             echo "$(date +%T) audio HAL keys found in $lib"
         fi
@@ -1930,35 +2225,118 @@ if [ -f /data/oneos_samcam ] && [ ! -L /data/sec ]; then
         echo "$(date +%T) no Samsung Camera data folder after 300 s: /data/sec/camera not made"
     ' </dev/null >> /data/sec_camera.log 2>&1 &
 fi
-# What folding does, set as soon as the guest's settings provider answers. The
-# UI activator sets it too, but only once the UI is up: a Fold switched while
-# folded started Pixel in state 2 (open; the hinge sensor had not reported
-# yet), the first hinge event 4 s later folded it to state 0 with "sleep on
-# fold", and the screen went off at 02:19:55, eleven seconds before the
-# activator's setting (Z Fold8 Ultra, session 9455098f). Same values and rule
-# as the activator (a stage set to sleep is kept). Only the guest's own
-# provider is asked (its mount namespace is this one), each call bounded by
-# timeout: One UI's services are not to be called during the switch.
+# Grant Gallery Bridge (OneOSGalleryStub, com.sec.android.gallery3d) READ_MEDIA_* permissions
+# after boot completes so existing /data partitions receive them even without fresh XML setup.
+if [ -f /data/oneos_samcam ]; then
+    $BB sh -c '
+        i=0
+        while [ "$(getprop service.bootanim.exit)" != 1 ] && [ $i -lt 600 ]; do sleep 1; i=$((i + 1)); done
+        sleep 2
+        if timeout 10 pm path com.sec.android.gallery3d 2>/dev/null | grep -q OneOSGalleryStub; then
+            timeout 10 pm grant com.sec.android.gallery3d android.permission.READ_MEDIA_IMAGES 2>/dev/null || true
+            timeout 10 pm grant com.sec.android.gallery3d android.permission.READ_MEDIA_VIDEO 2>/dev/null || true
+            echo "$(date +%T) granted READ_MEDIA_IMAGES/VIDEO to OneOSGalleryStub (com.sec.android.gallery3d)" >> /data/sec_camera.log
+        fi
+    ' </dev/null >/dev/null 2>&1 &
+fi
+# The guest's settings provider can appear before the UI Activator. Read and
+# write these settings only after confirming the provider is in this namespace.
+FOLD_CONTINUE=0
+FOLD8_TASKBAR=0
+FOLD8_RESTORE_DEX_HOME=0
 if [ "$(cat /data/oneos_fold_mode 2>/dev/null)" = layout ] && [ "${ONEOS_GUEST_FOLD_CONTINUE:-1}" = 1 ]; then
-    if [ -e /system/framework/oplus-services.jar ]; then FOLDN=continue_using_apps_when_folded; FOLDV=1; else FOLDN=fold_lock_behavior_setting; FOLDV=stay_awake_on_fold_key; fi
-    $BB sh -c "
-        SELF=\$(readlink /proc/self/ns/mnt); i=0
-        while [ \$i -lt 2000 ]; do
-            p=\$(timeout 2 dumpsys --pid settings 2>/dev/null | tr -dc 0-9)
-            if [ -n \"\$p\" ] && [ \"\$(readlink /proc/\$p/ns/mnt 2>/dev/null)\" = \"\$SELF\" ]; then
-                cur=\$(timeout 5 settings get system $FOLDN 2>/dev/null)
-                case \"$FOLDN:\$cur\" in
-                    continue_using_apps_when_folded:1|continue_using_apps_when_folded:2|fold_lock_behavior_setting:stay_awake_on_fold_key|fold_lock_behavior_setting:sleep_on_fold_key) ;;
-                    *) timeout 5 settings put system $FOLDN $FOLDV 2>/dev/null ;;
-                esac
-                echo \"\$(date +%T) $FOLDN: \$cur -> \$(timeout 5 settings get system $FOLDN 2>/dev/null) (the guest's settings provider, pid \$p)\"
+    FOLD_CONTINUE=1
+fi
+if { [ "${ONEOS_PROFILE:-}" = f8 ] && [ "$(getprop ro.product.model)" = SM-F971B ] ||
+     case "${ONEOS_PROFILE:-}:$(getprop ro.product.model)" in tab-*:*|*:SM-X510|*:SM-X516*) true ;; *) false ;; esac; } &&
+   grep -qx 'ro.build.PDA=S948BXXU6ZZKN' /system/build.prop &&
+   [ ! -e /data/.oneui95-fold8-taskbar ] && [ ! -L /data/.oneui95-fold8-taskbar ]; then
+    FOLD8_TASKBAR=1
+fi
+# Restore the narrow live launcher recovery once the running services JAR
+# prevents the inactive internal display from starting SecondaryLauncher.
+if [ "${ONEOS_PROFILE:-}" = f8 ] && [ -f /data/.oneui95-fold8-secondary-home-temporary ] &&
+   [ ! -L /data/.oneui95-fold8-secondary-home-temporary ] &&
+   [ "$($BB sha256sum /system/framework/services.jar | cut -d' ' -f1)" = "7f68fa1c2f4c384c2a79ceeedd76f0aebb70eff5447979b878d9fe42cbb64159" ]; then
+    FOLD8_RESTORE_DEX_HOME=1
+fi
+if [ "$FOLD_CONTINUE" = 1 ] || [ "$FOLD8_TASKBAR" = 1 ] || [ "$FOLD8_RESTORE_DEX_HOME" = 1 ]; then
+    if [ -e /system/framework/oplus-services.jar ]; then
+        FOLDN=continue_using_apps_when_folded
+        FOLDV=1
+    else
+        FOLDN=fold_lock_behavior_setting
+        FOLDV=stay_awake_on_fold_key
+    fi
+    $BB sh -c '
+        fold_continue=$1
+        fold_setting=$2
+        fold_value=$3
+        fold8_taskbar=$4
+        restore_dex_home=$5
+        self=$(readlink /proc/self/ns/mnt)
+        i=0
+        while [ "$i" -lt 2000 ]; do
+            provider=$(timeout 2 dumpsys --pid settings 2>/dev/null | tr -dc 0-9)
+            if [ -n "$self" ] && [ -n "$provider" ] && [ "$(readlink /proc/$provider/ns/mnt 2>/dev/null)" = "$self" ]; then
+                if [ "$restore_dex_home" = 1 ]; then
+                    package_manager=$(timeout 2 dumpsys --pid package 2>/dev/null | tr -dc 0-9)
+                    if [ "$package_manager" = "$provider" ] &&
+                       timeout 5 pm default-state --user 0 com.sec.android.app.launcher/com.honeyspace.dexservice.SecondaryLauncher; then
+                        rm -f /data/.oneui95-fold8-secondary-home-temporary
+                    else
+                        i=$((i + 1))
+                        sleep 0.3
+                        continue
+                    fi
+                fi
+                if [ "$fold_continue" = 1 ]; then
+                    cur=$(timeout 5 settings get system "$fold_setting" 2>/dev/null)
+                    case "$fold_setting:$cur" in
+                        continue_using_apps_when_folded:1|continue_using_apps_when_folded:2|fold_lock_behavior_setting:stay_awake_on_fold_key|fold_lock_behavior_setting:sleep_on_fold_key|fold_lock_behavior_setting:selective_stay_awake_key) ;;
+                        *) timeout 5 settings put system "$fold_setting" "$fold_value" 2>/dev/null ;;
+                    esac
+                    echo "$(date +%T) $fold_setting: $cur -> $(timeout 5 settings get system "$fold_setting" 2>/dev/null) (guest provider $provider)"
+                fi
+                # Samsung reports availability by display and posture itself.
+                # Set the user preference once; subsequent choices are kept.
+                if [ "$fold8_taskbar" = 1 ] && timeout 5 settings put global task_bar 1 &&
+                   [ "$(timeout 5 settings get global task_bar 2>/dev/null)" = 1 ]; then
+                    : > /data/.oneui95-fold8-taskbar
+                    echo "$(date +%T) Fold8 taskbar enabled for this stage"
+                fi
                 exit 0
             fi
-            i=\$((i + 1)); sleep 0.3
+            i=$((i + 1))
+            sleep 0.3
         done
-        echo \"\$(date +%T) $FOLDN: the guest's settings provider did not answer in 10 minutes; the UI activator sets it\"
-    " </dev/null >> /data/fold_setting.log 2>&1 &
-    echo "[Pivoted Root] Fold behaviour: $FOLDN=$FOLDV as soon as the guest's settings provider answers (/data/fold_setting.log)"
+        echo "$(date +%T) the guest settings provider did not answer"
+    ' oneos-fold-settings "$FOLD_CONTINUE" "$FOLDN" "$FOLDV" "$FOLD8_TASKBAR" "$FOLD8_RESTORE_DEX_HOME" </dev/null >> /data/fold_setting.log 2>&1 &
+    echo "[Pivoted Root] Fold preferences will be applied when the guest settings provider answers (/data/fold_setting.log)"
+fi
+# Samsung's Live Notifications developer setting belongs to the guest user.
+if { [ "${ONEOS_PROFILE:-}" = f8 ] && [ "${ONEOS_GUEST_FORM:-}" = fold ] ||
+     case "${ONEOS_PROFILE:-}:$(getprop ro.product.model)" in tab-*:*|*:SM-X510|*:SM-X516*) true ;; *) false ;; esac; } &&
+   grep -qx 'ro.build.PDA=S948BXXU6ZZKN' /system/build.prop 2>/dev/null; then
+    $BB sh -c '
+        key=enable_notification_nowbar_test
+        self=$(readlink /proc/self/ns/mnt)
+        i=0
+        while [ "$i" -lt 120 ]; do
+            pid=$(timeout 2 dumpsys --pid settings 2>/dev/null | tr -dc 0-9)
+            if [ -n "$self" ] && [ -n "$pid" ] &&
+               [ "$(readlink "/proc/$pid/ns/mnt" 2>/dev/null)" = "$self" ] &&
+               { [ "$(timeout 5 settings --user 0 get secure "$key" 2>/dev/null)" = 1 ] ||
+                 timeout 5 settings --user 0 put secure "$key" 1 2>/dev/null; } &&
+               [ "$(timeout 5 settings --user 0 get secure "$key" 2>/dev/null)" = 1 ]; then
+                echo "[Pivoted Root] Now Bar notification test mode enabled for guest user 0"
+                exit 0
+            fi
+            i=$((i + 1))
+            sleep 1
+        done
+        echo "[Pivoted Root] Could not enable Now Bar test mode in the guest Settings provider"
+    ' </dev/null &
 fi
 # vivo OriginOS's glass (real-time blur): SystemUI's material SDK
 # (com.spacesystem.materialsdk.Material.resolveGlassSetting) and its plugins
@@ -2034,6 +2412,35 @@ if [ -e /system/framework/vivo-services.jar ] && [ "${ONEOS_GUEST_VIVO_SETUP:-0}
     " </dev/null >> /data/vivo_setup.log 2>&1 &
     echo "[Pivoted Root] vivo setup: device_provisioned, user_setup_complete, setup_wizard_has_run = 1 where not, once the guest's settings provider answers (/data/vivo_setup.log)"
 fi
+# 0.5.48 (Z Fold8 F971U 7ec32f30, One UI 9.5 on 0.5.46): on a US carrier phone Samsung's setup wizard goes on
+# from its terms page to the US activation flow, a script in com.sec.android.app.setupwizard, which the image
+# (S948B, global) does not have: Google's WizardManager logged "Cannot find file: android.resource://
+# com.sec.android.app.setupwizard/raw/wizard_script_usa_activation_flow", crashed (NPE in its script loader)
+# seven times and the setup never went on ("Settings has stopped"). When that line shows while the guest is
+# not set up yet, setup is marked done, both wizards are turned off for this system and HOME is started;
+# Google and Samsung accounts are added later in Settings. ONEOS_GUEST_SUW_KEEP=1 leaves it as it is.
+if grep -q '^ro.build.version.oneui=' /system/build.prop 2>/dev/null && [ "${ONEOS_GUEST_SUW_KEEP:-0}" != 1 ]; then
+    $BB sh -c "
+        i=0
+        while [ \$i -lt 240 ]; do
+            sleep 5; i=\$((i + 1))
+            p=\$(timeout 5 settings get global device_provisioned 2>/dev/null); u=\$(timeout 5 settings get secure user_setup_complete 2>/dev/null)
+            [ \"\$p:\$u\" = 1:1 ] && exit 0
+            logcat -d -b main -s WizardManager:E 2>/dev/null | grep -q 'Cannot find file: android.resource://com.sec.android.app.setupwizard/' || continue
+            for kv in 'global device_provisioned' 'secure user_setup_complete' 'secure setup_wizard_has_run'; do
+                set -- \$kv
+                timeout 5 settings put \$1 \$2 1 2>/dev/null
+            done
+            for pk in com.google.android.setupwizard com.sec.android.app.SecSetupWizard; do
+                timeout 10 pm disable-user --user 0 \$pk >/dev/null 2>&1 && echo \"\$(date +%T) \$pk turned off\"
+            done
+            timeout 10 am start -a android.intent.action.MAIN -c android.intent.category.HOME >/dev/null 2>&1
+            echo \"\$(date +%T) US activation flow missing from this image: setup marked done (device_provisioned=\$(timeout 5 settings get global device_provisioned 2>/dev/null)), home started\"
+            exit 0
+        done
+    " </dev/null >> /data/oneos_suw.log 2>&1 &
+    echo "[Pivoted Root] One UI setup watch: a missing US activation flow ends the setup at home (/data/oneos_suw.log)"
+fi
 # Test build 8 had an event-driven keeper (inotifyd on the guest's opens and
 # closes, the touchscreens held all session): the guest never showed a close
 # there, so it armed late or not at all and double tap stopped working (owner,
@@ -2088,7 +2495,11 @@ if [ "${ONEOS_GUEST_SAMSUNG_AUDIO:-1}" = 1 ] && [ -d /sys/devices/virtual/audio/
         i=0
         while [ "$(getprop service.bootanim.exit)" != 1 ] && [ $i -lt 600 ]; do sleep 1; i=$((i + 1)); done
         sleep 10
-        for kv in g_effect_dolby_enable=1 g_effect_dolby_profile=0 g_effect_dolby_volume_leveler=7; do log "$(param $kv)"; done
+        if [ -f /data/oneos_audio_rt ] && grep -q '^ro.build.version.oneui=' /system/build.prop 2>/dev/null; then
+            log "One UI guest: leaving Dolby and volume leveler to SoundAlive"
+        else
+            for kv in g_effect_dolby_enable=1 g_effect_dolby_profile=0 g_effect_dolby_volume_leveler=7; do log "$(param $kv)"; done
+        fi
         last=""
         while :; do
             t=$(cat /sys/class/power_supply/battery/temp 2>/dev/null)
@@ -2104,9 +2515,503 @@ if [ "${ONEOS_GUEST_SAMSUNG_AUDIO:-1}" = 1 ] && [ -d /sys/devices/virtual/audio/
         done
     ' </dev/null >/dev/null 2>&1 &
 fi
+# Stereo speakers (0.5.33; S24 FE ColorOS 0.5.32, tester: "sound is not stereo"): on Galaxy phones whose second
+# speaker is the earpiece, One UI's own audioserver powers that speaker's amplifier for media
+# (libaudioflinger's AudioFlinger::DualSpkControl::setAmpPower -> the stream key
+# l_dual_speaker_amp_left_power_enable=true/false on the speaker output; it starts at false). A guest's
+# audioserver has no DualSpkControl, so the earpiece amplifier stayed off and media played from the bottom
+# speaker only (the output itself is 2-channel). Sent here to every guest output on the speaker once the
+# guest's audio is up, and again whenever the HAL opens a speaker output or someone turns the amplifier off;
+# never during a call (One UI's own rule takes the earpiece speaker out by the proximity sensor then). Only
+# where the vendor audio libraries know the key (the S24 FE's Exynos HAL does; the A36's does not).
+# ONEOS_GUEST_DUAL_SPK=0 leaves it out. Log: /data/oneos_sec_audio.log.
+if [ "${ONEOS_GUEST_DUAL_SPK:-1}" = 1 ] && [ -f /data/oneos_edm_stub.dex ]; then
+    ONEOS_BB="$BB" $BB sh -c '
+        BB=$ONEOS_BB
+        log() { echo "$(date +%T) stereo: $*" >> /data/oneos_sec_audio.log; }
+        K=l_dual_speaker_amp_left_power_enable
+        lib=$($BB grep -l -s "$K" /vendor/lib64/hw/*.so /vendor/lib64/*.so 2>/dev/null | head -n 1)
+        [ -n "$lib" ] || { log "the vendor audio libraries have no $K: not needed"; exit 0; }
+        i=0
+        while [ "$(getprop service.bootanim.exit)" != 1 ] && [ $i -lt 600 ]; do sleep 1; i=$((i + 1)); done
+        send() {
+            cs=$(dumpsys telephony.registry 2>/dev/null | $BB grep -m1 -o "mCallState=[0-9]*" | $BB grep -o "[0-9]*$")
+            [ "${cs:-0}" = 0 ] || { log "$1: in a call, left alone"; return 0; }
+            ios=$(dumpsys media.audio_flinger 2>/dev/null | $BB awk "
+                /^Output thread / { io = \"\"; if (match(\$0, /name AudioOut_[0-9A-Fa-f]+/)) io = substr(\$0, RSTART + 14, RLENGTH - 14); next }
+                /^ *Output devices:/ && io != \"\" { if (\$0 ~ /SPEAKER/) print io; io = \"\" }" | while read -r h; do echo $((0x$h)); done | $BB sort -un | $BB head -n 16 | $BB tr "\n" "," )
+            ios=${ios%,}
+            [ -n "$ios" ] || { log "$1: no speaker output yet"; return 1; }
+            r=$(/system/bin/sh /data/oneos_genv.sh /system/bin/env CLASSPATH=/data/oneos_edm_stub.dex /system/bin/app_process /system/bin OneOSAudioParam --io "$ios" "$K=true" 2>&1 | tail -n 1)
+            log "$(echo "$1: $r" | cut -c1-280)"
+        }
+        log "earpiece speaker amplifier key in ${lib##*/}"
+        n=0
+        i=0
+        until send start; do sleep 3; i=$((i + 1)); [ $i -lt 40 ] || break; done
+        last=0
+        # 0.5.34: also at every start of playback on the speaker. DualSpkControl in One UI sends the key to every
+        # speaker output each time sound starts (true) and stops (false) (S24 FE report 8d036182, One UI at
+        # 16:52:10 and 16:52:21); sent once at the start, stereo came and went with the state the HAL kept
+        # (tester: "sometimes stereo works"). The HAL logs the speaker route as the stream starts.
+        logcat -v brief -T 1 -s audio_hw_primary:D audio_hw_playback:D audio_hw_route:I sec_audio_hw:V AHAL:D 2>/dev/null | while IFS= read -r l; do
+            pause=1
+            case "$l" in
+                *"$K=false"*) why="amplifier turned off" ;;
+                *open_output_stream*"devices(0x2)"*) why="speaker output opened" ;;
+                *"routes to device(speaker"*) why="playback on the speaker"; pause=0 ;;
+                *) continue ;;
+            esac
+            now=$($BB date +%s)
+            [ $((now - last)) -ge 2 ] || continue
+            last=$now
+            [ $pause = 0 ] || sleep 1
+            if [ "$why" = "playback on the speaker" ]; then send "$why" >/dev/null; n=$((n + 1)); [ $((n % 50)) = 1 ] && log "playback on the speaker: sent $n times so far"; else send "$why"; fi
+        done
+    ' </dev/null >/dev/null 2>&1 &
+fi
+# ColorOS Charging Settings bridge (Reverse Wireless PowerShare + Bypass Charging + Wireless Quiet Charging):
+# - guest_prepare.sh declares oplus.power.onwirelesscharger.support and oplus.power.wirelesschgwhenwired.support;
+# - this daemon registers AppFeatureProvider flags on boot (com.oplus.fullscene_plc_charge.support,
+#   os.charge.settings.wirelesscharge.support, os.charge.settings.wirelesschargingcoil.position,
+#   oplus.power.onwirelesscharger.support, oplus.power.wirelesschgwhenwired.support) ONLY for nodes present on
+#   this Galaxy, and mirrors ColorOS UI switches -> Samsung sec_battery sysfs nodes via SettingsProvider logcat:
+#   * wireless_reverse_charging_state + wireless_reverse_battery_level_threshold -> wc_tx_en + wc_tx_stop_capacity
+#   * bypass_charge_state + bypass_charge_value -> pass_through (when wired & capacity >= threshold)
+#   * low_power_charging_state + slient_mode_type_state (0=Bedtime,1=Always,2=Custom) + Setting_SetTime* -> batt_hv_wireless_pad_ctrl (1=quiet,2=fast)
+# ONEOS_GUEST_REVERSE_WIRELESS=0 disables reverse wireless; ONEOS_GUEST_CHARGING_BRIDGE=0 disables bypass/quiet.
+# Log: /data/oneos_reverse_wireless.log.
+if { [ "${ONEOS_GUEST_REVERSE_WIRELESS:-1}" = 1 ] || [ "${ONEOS_GUEST_CHARGING_BRIDGE:-1}" = 1 ]; } &&
+   { [ -w /sys/class/power_supply/battery/wc_tx_en ] || [ -w /sys/class/power_supply/battery/pass_through ] || [ -w /sys/class/power_supply/battery/batt_hv_wireless_pad_ctrl ]; } &&
+   { [ -e /system/framework/oplus-services.jar ] || [ -L /system/framework/oplus-services.jar ]; }; then
+    # One UI's own values first, for return_to_oneui.sh to put back exactly (only once per session).
+    if [ ! -f /data/oneos_charge_orig ]; then
+        for n in wc_tx_en wc_tx_stop_capacity pass_through batt_hv_wireless_pad_ctrl; do
+            v=$(cat /sys/class/power_supply/battery/$n 2>/dev/null)
+            case "$v" in ''|*[!0-9]*) ;; *) echo "/sys/class/power_supply/battery/$n $v" ;; esac
+        done > /data/oneos_charge_orig
+    fi
+    cat > /data/oneos_charging_bridge.sh <<'CHGBR'
+#!/system/bin/sh
+BB=$ONEOS_BB
+[ -n "$BB" ] || BB=$(which busybox 2>/dev/null)
+RW_EN=${ONEOS_RW_EN:-1}
+CB_EN=${ONEOS_CB_EN:-1}
+
+TX=/sys/class/power_supply/battery/wc_tx_en
+STOP=/sys/class/power_supply/battery/wc_tx_stop_capacity
+TXID=/sys/class/power_supply/battery/wc_tx_id
+TXEV=/sys/class/power_supply/battery/batt_tx_event
+IOUT=/sys/class/power_supply/battery/wc_tx_mfc_iout
+PT=/sys/class/power_supply/battery/pass_through
+WCTRL=/sys/class/power_supply/battery/batt_hv_wireless_pad_ctrl
+WC_EN=/sys/class/power_supply/battery/wc_enable
+CAP=/sys/class/power_supply/battery/capacity
+TEMP=/sys/class/power_supply/battery/temp
+STAT=/sys/class/power_supply/battery/status
+ONL=/sys/class/power_supply/battery/online
+
+MON_PID=/data/oneos_rtx_mon.pid
+MON_BP_PID=/data/oneos_bp_mon.pid
+MON_QC_PID=/data/oneos_qc_mon.pid
+QC_LAST=/data/oneos_qc_last
+AF_URI=content://com.oplus.customize.coreapp.configmanager.configprovider.AppFeatureProvider/app_feature
+
+log() { echo "$(date +%T) $*" >> /data/oneos_reverse_wireless.log; }
+
+kill_pidfile() {
+    pf=$1
+    if [ -f "$pf" ]; then
+        mp=$(cat "$pf" 2>/dev/null)
+        case "$mp" in ""|*[!0-9]*) ;; *) kill "$mp" 2>/dev/null ;; esac
+        rm -f "$pf"
+    fi
+}
+
+apply_thresh() {
+    [ "$RW_EN" = 1 ] && [ -w "$STOP" ] || return 0
+    th=$(timeout 5 settings get system wireless_reverse_battery_level_threshold 2>/dev/null)
+    case "$th" in ""|*[!0-9]*) return 0 ;; esac
+    [ "$th" -lt 30 ] && th=30
+    [ "$th" -gt 90 ] && th=90
+    cur_th=$(cat "$STOP" 2>/dev/null)
+    [ "$cur_th" = "$th" ] || { echo "$th" > "$STOP" 2>/dev/null && log "stop_capacity -> $th"; }
+}
+
+stop_mon() { kill_pidfile "$MON_PID"; }
+
+start_mon() {
+    stop_mon
+    (
+        sec=0
+        active_sent=0
+        first=1
+        while :; do
+            if [ "$first" = 1 ]; then
+                sleep 3
+                sec=$((sec + 3))
+                first=0
+            else
+                sleep 2
+                sec=$((sec + 2))
+            fi
+            cur=$(cat "$TX" 2>/dev/null)
+            if [ "$cur" != 1 ]; then
+                txev=$(cat "$TXEV" 2>/dev/null); bs=$(cat "$STAT" 2>/dev/null)
+                on=$(cat "$ONL" 2>/dev/null); tmp=$(cat "$TEMP" 2>/dev/null)
+                cap=$(cat "$CAP" 2>/dev/null); sc=$(cat "$STOP" 2>/dev/null)
+                log "hw wc_tx_en=${cur:-?} after ${sec}s (tx_event=${txev:-?} status=${bs:-?} online=${on:-?} temp=${tmp:-?} cap=${cap:-?} stop=${sc:-?}) -> syncing UI off"
+                st=$(timeout 5 settings get system wireless_reverse_charging_state 2>/dev/null)
+                [ "$st" = 1 ] && timeout 5 settings put system wireless_reverse_charging_state 0 2>/dev/null
+                rm -f "$MON_PID"
+                exit 0
+            fi
+            if [ "$active_sent" = 0 ]; then
+                txid=$(cat "$TXID" 2>/dev/null); case "$txid" in ""|*[!0-9]*) txid=0 ;; esac
+                iout=$(cat "$IOUT" 2>/dev/null); case "$iout" in ""|*[!0-9]*) iout=0 ;; esac
+                if [ "$txid" -gt 0 ] || [ "$iout" -gt 0 ] || [ "$sec" -ge 80 ]; then
+                    cap=$(cat "$CAP" 2>/dev/null); case "$cap" in ""|*[!0-9]*) cap=50 ;; esac
+                    tmp=$(cat "$TEMP" 2>/dev/null); case "$tmp" in ""|*[!0-9-]*) tmp=300 ;; esac
+                    timeout 5 am broadcast -p com.oplus.battery -a android.intent.action.ADDITIONAL_BATTERY_CHANGED \
+                        --ei level "$cap" --ei temperature "$tmp" --ei status 3 --ei plugged 0 \
+                        --ei chargeplugged 0 --ei chargertechnology 0 --ei wireless_reverse_chg_type 1 >/dev/null 2>&1
+                    active_sent=1
+                    log "peer active (tx_id=$txid iout=$iout sec=$sec) -> notified com.oplus.battery (cap=$cap temp=$tmp)"
+                fi
+            fi
+        done
+    ) </dev/null >/dev/null 2>&1 &
+    echo $! > "$MON_PID"
+}
+
+is_wired_plugged() {
+    [ "$(cat /sys/class/power_supply/usb/online 2>/dev/null)" = 1 ] && return 0
+    [ "$(cat /sys/class/power_supply/ac/online 2>/dev/null)" = 1 ] && return 0
+    wc=$(cat /sys/class/power_supply/battery/wc_status 2>/dev/null)
+    src=$(cat /sys/class/power_supply/battery/batt_charging_source 2>/dev/null)
+    case "$src" in ""|0|1|*[!0-9]*) return 1 ;; esac
+    [ "${wc:-0}" = 0 ] && return 0
+    return 1
+}
+
+apply_bypass_once() {
+    [ "$CB_EN" = 1 ] && [ -w "$PT" ] || return 0
+    bs=$(timeout 5 settings get system bypass_charge_state 2>/dev/null)
+    bv=$(timeout 5 settings get system bypass_charge_value 2>/dev/null)
+    case "$bv" in ""|*[!0-9]*) bv=20 ;; esac
+    cap=$(cat "$CAP" 2>/dev/null)
+    case "$cap" in ""|*[!0-9]*) cap=0 ;; esac
+    want=0
+    if [ "$bs" = 1 ] && is_wired_plugged && [ "$cap" -ge "$bv" ]; then
+        want=1
+    fi
+    cur=$(cat "$PT" 2>/dev/null)
+    if [ "$cur" != "$want" ]; then
+        echo "$want" > "$PT" 2>/dev/null && log "bypass pass_through -> $want (state=${bs:-0} thresh=$bv cap=$cap)"
+    fi
+}
+
+sync_bypass() {
+    [ "$CB_EN" = 1 ] && [ -w "$PT" ] || return 0
+    apply_bypass_once
+    bs=$(timeout 5 settings get system bypass_charge_state 2>/dev/null)
+    if [ "$bs" = 1 ]; then
+        if [ ! -f "$MON_BP_PID" ]; then
+            (
+                while :; do
+                    sleep 5
+                    bs2=$(timeout 5 settings get system bypass_charge_state 2>/dev/null)
+                    if [ "$bs2" != 1 ]; then
+                        cur=$(cat "$PT" 2>/dev/null)
+                        [ "$cur" != 0 ] && echo 0 > "$PT" 2>/dev/null && log "bypass pass_through -> 0 (state off)"
+                        rm -f "$MON_BP_PID"
+                        exit 0
+                    fi
+                    apply_bypass_once
+                done
+            ) </dev/null >/dev/null 2>&1 &
+            echo $! > "$MON_BP_PID"
+        fi
+    else
+        kill_pidfile "$MON_BP_PID"
+    fi
+}
+
+apply_quiet_once() {
+    [ "$CB_EN" = 1 ] && [ -w "$WCTRL" ] || return 0
+    qs=$(timeout 5 settings get system low_power_charging_state 2>/dev/null)
+    qm=0
+    want=2
+    need_sched=0
+    if [ "$qs" = 1 ]; then
+        qm=$(timeout 5 settings get system slient_mode_type_state 2>/dev/null)
+        case "$qm" in ""|*[!0-9]*) qm=0 ;; esac
+        if [ "$qm" = 1 ]; then
+            want=1
+        elif [ "$qm" = 0 ]; then
+            need_sched=1
+            now_m=$(date +%H:%M | awk -F: '{ print ($1 + 0) * 60 + ($2 + 0) }')
+            [ "$now_m" -ge 1320 ] || [ "$now_m" -lt 420 ] && want=1
+        else
+            need_sched=1
+            now_m=$(date +%H:%M | awk -F: '{ print ($1 + 0) * 60 + ($2 + 0) }')
+            bh=$(timeout 5 settings get system Setting_SetTimeBeginHour 2>/dev/null); case "$bh" in ""|*[!0-9]*) bh=23 ;; esac
+            bm=$(timeout 5 settings get system Setting_SetTimeBeginMin 2>/dev/null); case "$bm" in ""|*[!0-9]*) bm=0 ;; esac
+            eh=$(timeout 5 settings get system Setting_SetTimeEndHour 2>/dev/null); case "$eh" in ""|*[!0-9]*) eh=7 ;; esac
+            em=$(timeout 5 settings get system Setting_SetTimeEndMin 2>/dev/null); case "$em" in ""|*[!0-9]*) em=0 ;; esac
+            in_win=$(awk -v n="$now_m" -v bh="$bh" -v bm="$bm" -v eh="$eh" -v em="$em" 'BEGIN {
+                b = (bh + 0) * 60 + (bm + 0); e = (eh + 0) * 60 + (em + 0);
+                if (b == e) print 1;
+                else if (b < e) print (n >= b && n < e) ? 1 : 0;
+                else print (n >= b || n < e) ? 1 : 0;
+            }')
+            [ "$in_win" = 1 ] && want=1
+        fi
+    fi
+    last=$(cat "$QC_LAST" 2>/dev/null)
+    if [ "$want" = 1 ] || [ "$last" = 1 ] || { [ -n "$last" ] && [ "$last" != "$want" ]; }; then
+        if [ "$last" != "$want" ]; then
+            echo "$want" > "$WCTRL" 2>/dev/null && { echo "$want" > "$QC_LAST"; log "quiet batt_hv_wireless_pad_ctrl -> $want (state=${qs:-0} mode=$qm)"; }
+        fi
+    fi
+    return "$need_sched"
+}
+
+sync_quiet() {
+    [ "$CB_EN" = 1 ] && [ -w "$WCTRL" ] || return 0
+    apply_quiet_once
+    need_sched=$?
+    if [ "$need_sched" = 1 ]; then
+        if [ ! -f "$MON_QC_PID" ]; then
+            (
+                while :; do
+                    sleep 60
+                    apply_quiet_once
+                    if [ $? != 1 ]; then
+                        rm -f "$MON_QC_PID"
+                        exit 0
+                    fi
+                done
+            ) </dev/null >/dev/null 2>&1 &
+            echo $! > "$MON_QC_PID"
+        fi
+    else
+        kill_pidfile "$MON_QC_PID"
+    fi
+}
+
+ensure_af() {
+    fname=$1; fparam=$2
+    esc=$(printf '%s' "$fparam" | sed 's/:/\\:/g')
+    k=0
+    while [ $k -lt 5 ]; do
+        q=$(timeout 5 content query --uri "$AF_URI" --where "featurename=\"$fname\"" 2>/dev/null)
+        if printf '%s\n' "$q" | grep -q "parameters=$fparam"; then
+            return 0
+        fi
+        timeout 5 content delete --uri "$AF_URI" --where "featurename=\"$fname\"" >/dev/null 2>&1 || true
+        if timeout 5 content insert --uri "$AF_URI" --bind "featurename:s:$fname" --bind "parameters:s:$esc" >/dev/null 2>&1; then
+            q=$(timeout 5 content query --uri "$AF_URI" --where "featurename=\"$fname\"" 2>/dev/null)
+            if printf '%s\n' "$q" | grep -q "parameters=$fparam"; then
+                af_changed=1
+                log "app_feature set $fname=$fparam"
+                return 0
+            fi
+        fi
+        k=$((k + 1))
+        sleep 2
+    done
+    log "app_feature failed $fname=$fparam"
+}
+
+i=0
+while [ "$(getprop service.bootanim.exit)" != 1 ] && [ $i -lt 600 ]; do sleep 1; i=$((i + 1)); done
+sleep 5
+rm -f "$MON_PID" "$MON_BP_PID" "$MON_QC_PID"
+
+# Register AppFeatureProvider features needed by com.oplus.battery Charging settings.
+j=0
+while [ $j -lt 30 ]; do
+    if timeout 5 content query --uri "$AF_URI" --where "featurename=\"com.oplus.fullscene_plc_charge.support\"" >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+    j=$((j + 1))
+done
+af_changed=0
+if [ "$CB_EN" = 1 ] && [ -w "$PT" ]; then
+    ensure_af "com.oplus.fullscene_plc_charge.support" "boolean:true"
+fi
+if [ "$RW_EN" = 1 ] || [ "$CB_EN" = 1 ]; then
+    if [ -w "$TX" ] || [ -w "$WCTRL" ] || [ -e "$WC_EN" ]; then
+        ensure_af "oplus.power.onwirelesscharger.support" "boolean:true"
+        ensure_af "oplus.power.wirelesschgwhenwired.support" "boolean:true"
+        ensure_af "os.charge.settings.wirelesscharge.support" "boolean:true"
+        ensure_af "os.charge.settings.wirelesschargingcoil.position" "float:0.5"
+    fi
+fi
+if [ "$af_changed" = 1 ]; then
+    timeout 5 am force-stop com.oplus.battery >/dev/null 2>&1 || true
+    log "restarted com.oplus.battery to load charging AppFeatures"
+fi
+
+if [ "$RW_EN" = 1 ] && [ -w "$TX" ]; then
+    cur=$(cat "$TX" 2>/dev/null)
+    if [ "$cur" != 1 ]; then
+        st=$(timeout 5 settings get system wireless_reverse_charging_state 2>/dev/null)
+        [ "$st" = 1 ] && timeout 5 settings put system wireless_reverse_charging_state 0 2>/dev/null
+    fi
+    apply_thresh
+fi
+sync_bypass
+sync_quiet
+log "bridge ready (wc_tx_en=$(cat "$TX" 2>/dev/null || echo ?), pass_through=$(cat "$PT" 2>/dev/null || echo ?), wctrl=$([ -w "$WCTRL" ] && echo rw || echo no))"
+
+while :; do
+    last_on_ts=0
+    logcat -v brief -T 1 -s SettingsProvider:D WirelessChargingController:D BypassChargeController:D BatteryChargePresenter:D Battery:D 2>/dev/null | while IFS= read -r l; do
+        case "$l" in
+            *wireless_reverse_battery_level_threshold*)
+                apply_thresh ;;
+            *wireless_reverse_charging_state*|*mReverseStateObserver*)
+                [ "$RW_EN" = 1 ] && [ -w "$TX" ] || continue
+                st=$(timeout 5 settings get system wireless_reverse_charging_state 2>/dev/null)
+                if [ "$st" = 1 ]; then
+                    now=$(date +%s 2>/dev/null); case "$now" in ""|*[!0-9]*) now=0 ;; esac
+                    if [ "$now" -gt 0 ] && [ "$((now - last_on_ts))" -lt 3 ]; then
+                        [ -f "$MON_PID" ] || start_mon
+                        continue
+                    fi
+                    if [ "$(cat "$TX" 2>/dev/null)" != 1 ]; then
+                        apply_thresh
+                        cap=$(cat "$CAP" 2>/dev/null); tmp=$(cat "$TEMP" 2>/dev/null)
+                        bs=$(cat "$STAT" 2>/dev/null); on=$(cat "$ONL" 2>/dev/null)
+                        sc=$(cat "$STOP" 2>/dev/null)
+                        if echo 1 > "$TX" 2>/dev/null; then
+                            last_on_ts=$now
+                            log "UI ON -> wc_tx_en=1 (cap=${cap:-?} temp=${tmp:-?} status=${bs:-?} online=${on:-?} stop=${sc:-?})"
+                        else
+                            log "UI ON -> wc_tx_en write failed (cap=${cap:-?} temp=${tmp:-?} status=${bs:-?} online=${on:-?}); reverting UI"
+                            timeout 5 settings put system wireless_reverse_charging_state 0 2>/dev/null
+                            continue
+                        fi
+                    else
+                        last_on_ts=$now
+                    fi
+                    [ -f "$MON_PID" ] || start_mon
+                elif [ "$st" = 0 ]; then
+                    last_on_ts=0
+                    stop_mon
+                    if [ "$(cat "$TX" 2>/dev/null)" != 0 ]; then
+                        echo 0 > "$TX" 2>/dev/null && log "UI OFF -> wc_tx_en=0"
+                    fi
+                fi ;;
+            *bypass_charge_state*|*bypass_charge_value*|*BypassChargeController*)
+                sync_bypass ;;
+            *low_power_charging_state*|*slient_mode_type_state*|*Setting_SetTime*)
+                sync_quiet ;;
+        esac
+    done
+    sleep 2
+done
+CHGBR
+    chmod 755 /data/oneos_charging_bridge.sh
+    ONEOS_BB="$BB" ONEOS_RW_EN="${ONEOS_GUEST_REVERSE_WIRELESS:-1}" ONEOS_CB_EN="${ONEOS_GUEST_CHARGING_BRIDGE:-1}" \
+        $BB sh /data/oneos_charging_bridge.sh </dev/null >/dev/null 2>&1 &
+fi
+# Guest-namespace TCP adbd on port 5555 for scrcpy / app_process tools:
+# Host adbd runs in init's mount namespace so its app_process loads Samsung One UI's framework.jar
+# and hits Binder AIDL mismatches ("IDisplayManagerCallback", "TABLET_MODE") against ColorOS system_server.
+# Launching a second adbd in guest's namespace (with guest BOOTCLASSPATH and an isolated tmpfs over
+# /dev/usb-ffs/adb so host USB FFS is untouched) lets users run scrcpy over adb forward/Wi-Fi.
+# Off unless ONEOS_GUEST_ADBD=1 (owner, 11-23: "adbd is not allowed, only for us": a network adbd with the
+# root shell's label is a developer tool, never on for users). Log: /data/oneos_guest_adbd.log.
+if [ "${ONEOS_GUEST_ADBD:-0}" = 1 ] && [ -f /data/oneos_host_adb ] && [ -x /apex/com.android.adbd/bin/adbd ]; then
+    cat > /data/oneos_guest_adbd.sh <<'GADBD'
+#!/system/bin/sh
+export PATH=/system/bin:/system/xbin:/vendor/bin:/apex/com.android.adbd/bin:$PATH
+BB=$ONEOS_BB
+[ -n "$BB" ] || BB=$(which busybox 2>/dev/null)
+LOG=/data/oneos_guest_adbd.log
+PIDFILE=/data/oneos_guest_adbd.pid
+
+i=0
+while [ "$(getprop service.bootanim.exit)" != 1 ] && [ $i -lt 600 ]; do sleep 1; i=$((i + 1)); done
+sleep 2
+
+fix_adb_perms() {
+    if [ -d /data/misc/adb ]; then
+        "$BB" chown 1000:2000 /data/misc/adb 2>/dev/null || true
+        "$BB" chmod 02755 /data/misc/adb 2>/dev/null || true
+        "$BB" chcon u:object_r:adb_keys_file:s0 /data/misc/adb 2>/dev/null || true
+    fi
+    if [ -f /data/misc/adb/adb_keys ]; then
+        "$BB" chown 1000:2000 /data/misc/adb/adb_keys 2>/dev/null || true
+        "$BB" chmod 0644 /data/misc/adb/adb_keys 2>/dev/null || true
+        "$BB" chcon u:object_r:adb_keys_file:s0 /data/misc/adb/adb_keys 2>/dev/null || true
+    fi
+    mkdir -p /data/local/tmp 2>/dev/null || true
+    "$BB" chown 2000:2000 /data/local/tmp 2>/dev/null || true
+    "$BB" chmod 771 /data/local/tmp 2>/dev/null || true
+}
+fix_adb_perms
+echo "$(date +%T) adb_keys: $(ls -laZ /data/misc/adb/adb_keys 2>&1) lines=$(wc -l < /data/misc/adb/adb_keys 2>/dev/null || echo 0)" >> "$LOG"
+
+if [ -f /data/system/environ/classpath ]; then
+    while read -r kw name value; do
+        [ "$kw" = "export" ] && [ -n "$name" ] && export "$name=$value"
+    done < /data/system/environ/classpath
+fi
+
+start_adbd() {
+    # Do NOT set service.adb.tcp.port here: host init listens on that property and restarts One UI's
+    # adbd onto TCP 5555, hijacking 127.0.0.1:5555 from guest adbd. Mounting an empty tmpfs over
+    # /dev/usb-ffs/adb hides ep0 so guest adbd's !is_usb path binds tcp:5555 automatically.
+    ONEOS_BB="$BB" "$BB" unshare -m /system/bin/sh -c '
+        [ -d /dev/usb-ffs/adb ] && "$ONEOS_BB" mount -t tmpfs -o size=64k,ro tmpfs /dev/usb-ffs/adb 2>/dev/null || true
+        unset ANDROID_SOCKET_adbd
+        export PATH=/system/bin:/system/xbin:/vendor/bin:/apex/com.android.adbd/bin
+        export ANDROID_ROOT=/system ANDROID_DATA=/data TMPDIR=/data/local/tmp
+        exec /apex/com.android.adbd/bin/adbd --root_seclabel=u:r:su:s0
+    ' </dev/null >> "$LOG" 2>&1 &
+    APID=$!
+    echo "$APID" > "$PIDFILE"
+    sleep 2
+
+    alive=$(kill -0 "$APID" 2>/dev/null && echo yes || echo no)
+    prop=$(getprop service.adb.tcp.port 2>/dev/null)
+    if grep -qi ':15B3 ' /proc/net/tcp6 /proc/net/tcp 2>/dev/null; then
+        echo "$(date +%T) guest adbd listening on tcp:5555 (pid=$APID, alive=$alive, tcp.port=${prop:-empty}, BOOTCLASSPATH=${BOOTCLASSPATH:+set})" >> "$LOG"
+    else
+        echo "$(date +%T) guest adbd started (pid=$APID, alive=$alive, tcp.port=${prop:-empty}) but tcp:5555 not yet seen in /proc/net/tcp*" >> "$LOG"
+    fi
+}
+
+start_adbd
+while sleep 5; do
+    [ -f "$PIDFILE" ] || exit 0
+    if ! kill -0 "$APID" 2>/dev/null; then
+        echo "$(date +%T) guest adbd pid=$APID exited; restarting" >> "$LOG"
+        fix_adb_perms
+        start_adbd
+    fi
+done
+GADBD
+    chmod 755 /data/oneos_guest_adbd.sh
+    ONEOS_BB="$BB" $BB sh /data/oneos_guest_adbd.sh </dev/null >/dev/null 2>&1 &
+fi
 DT2W=${ONEOS_GUEST_DT2W:-1}
+# 0.5.32: not in a One UI image. Its own input service (SemInputDeviceManagerService) already writes the panel's
+# display state through Samsung's sysinput HAL, as One UI does (S24+ One UI 9.5 report 34d6923c: enabled@1,0 and
+# @1,1 from the guest at every screen off), so the keeper was a second writer to the same node: Galaxy A17 5G
+# report cea77895, kernel panic "list_add corruption" in sec_input_enable_device from the keeper's busybox write,
+# 17 min into a One UI 9.5 session. ONEOS_GUEST_DT2W=1 still forces it.
+if [ "${ONEOS_GUEST_DT2W:-}" != 1 ] && grep -q '^ro.build.version.oneui=' /system/build.prop 2>/dev/null; then
+    DT2W=0
+    echo "$(date +%T) not started: a One UI image wakes on double tap itself (its input service drives the touch IC)" >> /data/dt2w.log
+fi
 if [ "$DT2W" = 1 ] && command -v getevent >/dev/null 2>&1 && { [ -w /sys/class/sec/tsp/enabled ] || [ -w /sys/class/sec/tsp1/enabled ]; }; then
-    rm -f /data/oneos_dt2w_armed.* /data/oneos_dt2w_*.fifo /data/oneos_dt2w_aod* /data/oneos_dt2w_lid*
+    rm -f /data/oneos_dt2w_armed.* /data/oneos_dt2w_*.fifo /data/oneos_dt2w_aod* /data/oneos_dt2w_lid* /data/oneos_himax_aot.*
     ONEOS_BB="$BB" $BB sh -c '
         BB=$ONEOS_BB
         log() { echo "$(date +%T) $*"; }
@@ -2143,6 +3048,19 @@ if [ "$DT2W" = 1 ] && command -v getevent >/dev/null 2>&1 && { [ -w /sys/class/s
                     1:0|2:1) power=2; eon=2 ;;
                     *) log "$t: unmeasured STM power state; double tap left to the guest"; continue ;;
                 esac
+            fi
+            # Himax in-cell TDDI (Galaxy Tab S9 FE SM-X510, himax_tp / HX83102J): with aot_enable=1
+            # (One UI double-tap LPM), writing 1,0 on sleep makes himax_tp hold lcd_regulators and
+            # lcd_reset_regulator (lcd_rst) HIGH. One UI releases lcd_rst with 2,0 *before*
+            # SurfaceFlinger.setPowerMode(2), whereas a non-One-UI guest runs panel_reset_lp11 while
+            # lcd_rst is still held HIGH, so the TDDI DDI never resets and the screen stays dead black.
+            # Turning aot_enable off for the session puts 1,0 into clean HIMAX_STATE_POWER_OFF without
+            # holding lcd_rst, while keeping 1,0/2,1 active so wake still reloads the zero-flash FW.
+            if [ "$(readlink -f $I/device/driver 2>/dev/null)" = /sys/bus/spi/drivers/himax_tp ] && [ -w $T/cmd ]; then
+                if echo aot_enable,0 > $T/cmd 2>/dev/null; then
+                    : > /data/oneos_himax_aot.$t
+                    log "$t: Himax TDDI (himax_tp): aot_enable,0 for the session (LPM holds lcd_rst high across panel_reset_lp11); keeper still runs 1,0/2,1 for zero-flash FW reload on wake"
+                fi
             fi
             # KEY_WAKEUP (143) among its keys: bit 15 of the third word from the end.
             set -- $(cat $I/capabilities/key 2>/dev/null)
@@ -2686,7 +3604,12 @@ fi
 # sys.boot_completed, which One UI had already set, and 102 waited for a
 # system_server in this script's mount namespace, which never comes because
 # zygote unshares its own. Neither ever installed anything.)
-if [ -d /data/oneos_bring ] && [ ! -L /data/oneos_bring ]; then
+# 0.5.35: written whether or not /data/oneos_bring exists yet. A system set up fresh has no folder at
+# its first start, and the first app brought from inside the guest (BringAppsActivity) makes it mid-session:
+# the copy came through, but its install step runs this script, which had not been written, so nothing
+# was installed (PixelOS on the A36, 11-21: com.fahadali.xgram copied, never in the guest). The watcher's
+# own runs still need the folder and a copy waiting.
+if [ ! -L /data/oneos_bring ]; then
     cat > /data/oneos_bring_restore.sh <<'BRINGEOF'
 #!/system/bin/sh
 # OneOS Bring apps, the guest's half (0.4.75 build 103). guest_start.sh writes
@@ -2826,9 +3749,14 @@ install_try() {
 # APK this system cannot run): said once, tried again only with a new copy.
 final_reason() {
     case "$1" in
-        *UPDATE_INCOMPATIBLE*|*INVALID_APK*|*NO_MATCHING_ABIS*|*OLDER_SDK*|*PARSE_FAILED*|*NO_CERTIFICATES*|*MISSING_SPLIT*) return 0 ;;
+        *UPDATE_INCOMPATIBLE*|*INVALID_APK*|*NO_MATCHING_ABIS*|*OLDER_SDK*|*PARSE_FAILED*|*NO_CERTIFICATES*|*MISSING_SPLIT*|*ALREADY_EXISTS*) return 0 ;;
     esac
     return 1
+}
+
+# Include system packages disabled or uninstalled for this guest user.
+guest_has_system_app() {
+    gpm root 20 list packages -s -u --user 0 "$1" 2>/dev/null | grep -Fxq "package:$1"
 }
 
 # Installs $pkg from $d/apk. 0: installed, or the guest keeps its own newer
@@ -2838,6 +3766,15 @@ install_app() {
     n=0
     for a in "$d/apk"/*.apk; do [ -f "$a" ] && [ ! -L "$a" ] && n=$((n + 1)); done
     [ $n -gt 0 ] || { why="the copy has no APK"; return 1; }
+    if [ "$system_copy" = 1 ]; then
+        if guest_has_system_app "$pkg"; then
+            why="the guest already has this system app (ALREADY_EXISTS)"
+            return 1
+        fi
+        # Install only if absent, with the guest's ordinary application permissions.
+        install_try root -R --user 0
+        return $?
+    fi
     vend=""
     gpm root 20 path com.android.vending >/dev/null 2>&1 && vend="-i com.android.vending"
     round=0
@@ -2917,29 +3854,34 @@ restore_one() {
     pkg=$1; stamp=$2
     d="$BRING/$pkg"
     why=""
+    system_copy=0
+    if [ -f "$d/system" ] && [ ! -L "$d/system" ]; then system_copy=1; fi
     log "$pkg: starting (copy $stamp)"
     if ! install_app; then
         echo "$stamp $why" > "$d/failed"
         log "$pkg: NOT brought: $why"
         return 1
     fi
-    uid=$(gpm root 20 list packages -U "$pkg" 2>/dev/null | sed -n "s/^package:$pkg uid:\([0-9][0-9]*\).*/\1/p" | head -n 1)
-    is_dec "$uid" || uid=$(stat -c %u "$CE/$pkg" 2>/dev/null)
-    if ! is_dec "$uid" || [ "$uid" -lt 10000 ]; then
-        why="installed, but the system gave no app uid for it"
-        echo "$stamp $why" > "$d/failed"
-        log "$pkg: NOT brought: $why"
-        return 1
-    fi
-    if ! { restore_dir "$d/ce" "$CE/$pkg" && restore_dir "$d/de" "$DE/$pkg"; }; then
-        echo "$stamp $why" > "$d/failed"
-        log "$pkg: NOT brought: $why"
-        return 1
+    if [ "$system_copy" = 0 ]; then
+        uid=$(gpm root 20 list packages -U "$pkg" 2>/dev/null | sed -n "s/^package:$pkg uid:\([0-9][0-9]*\).*/\1/p" | head -n 1)
+        is_dec "$uid" || uid=$(stat -c %u "$CE/$pkg" 2>/dev/null)
+        if ! is_dec "$uid" || [ "$uid" -lt 10000 ]; then
+            why="installed, but the system gave no app uid for it"
+            echo "$stamp $why" > "$d/failed"
+            log "$pkg: NOT brought: $why"
+            return 1
+        fi
+        if ! { restore_dir "$d/ce" "$CE/$pkg" && restore_dir "$d/de" "$DE/$pkg"; }; then
+            echo "$stamp $why" > "$d/failed"
+            log "$pkg: NOT brought: $why"
+            return 1
+        fi
     fi
     echo "$stamp" > "$d/applied.new" && mv -f "$d/applied.new" "$d/applied" || { log "$pkg: could not mark it applied"; return 1; }
     rm -f "$d/failed"
     rm -rf "$d/apk" "$d/ce" "$d/de"
-    if [ $kept = 1 ]; then log "$pkg: ready (data restored; the newer version already here was kept; uid $uid, label $ctx)"
+    if [ "$system_copy" = 1 ]; then log "$pkg: ready (installed as a regular app)"
+    elif [ $kept = 1 ]; then log "$pkg: ready (data restored; the newer version already here was kept; uid $uid, label $ctx)"
     else log "$pkg: ready (installed and data restored; uid $uid, label $ctx)"; fi
     return 0
 }
@@ -2969,6 +3911,7 @@ if [ -s "$BRING/.forget" ] && [ ! -L "$BRING/.forget" ]; then
         while read -r fp; do
             is_package "$fp" || continue
             [ -d "$BRING/$fp" ] && continue
+            guest_has_system_app "$fp" && continue
             gpm root 20 path "$fp" >/dev/null 2>&1 || continue
             out=$(gpm root 60 uninstall "$fp" 2>&1)
             log "$fp: removed (taken off the list in OneOS on One UI): $(short "$out")"

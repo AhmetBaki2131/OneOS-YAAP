@@ -11,7 +11,7 @@ package com.fahadali.oneos.core.model
  * Every profile is in exactly one series.
  */
 enum class ApkSeries(val id: String, val label: String, val profileIds: List<String>) {
-    FOLD("fold", "Galaxy Z Fold", listOf(Profiles.ID_F8U, Profiles.ID_FOLD8, Profiles.ID_FOLD7, Profiles.ID_FOLD6, Profiles.ID_FOLD5)),
+    FOLD("fold", "Galaxy Z Fold", listOf(Profiles.ID_F8U, Profiles.ID_FOLD8, Profiles.ID_FOLD7, Profiles.ID_FOLD6, Profiles.ID_FOLD5, Profiles.ID_FOLD4)),
     S26(
         "s26",
         "Galaxy S26 series and Z Flip8",
@@ -50,7 +50,11 @@ enum class ApkSeries(val id: String, val label: String, val profileIds: List<Str
             // 0.4.93: the au Galaxy S23 (SCG19, One UI 9).
             Profiles.ID_S_8550_JP,
             // 0.4.95: the Galaxy M35 5G (One UI 9) and the Galaxy A15 5G with MediaTek (One UI 8.5).
-            Profiles.ID_M35, Profiles.ID_A15_5G,
+            Profiles.ID_M35, Profiles.ID_M36, Profiles.ID_A15_5G,
+            // 0.5.42: the Galaxy S22+ with Snapdragon (One UI 8).
+            Profiles.ID_S_PLUS_8450,
+            // 0.5.41: the Galaxy Tabs (OxygenOS 17 for tablets, testing).
+            Profiles.ID_TAB_S9, Profiles.ID_TAB_S10_FE, Profiles.ID_TAB_S10_FE_WIFI, Profiles.ID_TAB_S12_ULTRA, Profiles.ID_TAB_S9_FE_PLUS, Profiles.ID_TAB_S9_FE, Profiles.ID_TAB_S9_FE_5G, Profiles.ID_TAB_S9_ULTRA, Profiles.ID_TAB_S11, Profiles.ID_TAB_S11_ULTRA,
         ),
     ),
     ;

@@ -50,7 +50,7 @@ The screen lock kept inside the guest (`switcher/patches/guest_local_lock.py`, `
 
 <https://github.com/fouadd123>, [pull request #237](https://github.com/fahadalijaved/OneOS/pull/237)
 
-fouadd designed and built the OneOS website, <https://fahadalijaved.github.io/OneOS/>: the systems catalog, the phone compatibility pages and the comparison, in one page served from the `gh-pages` branch. Its styling is ported from [OneUI-Web](https://github.com/SamsungInternet/OneUI-Web) (MIT License, Copyright (c) 2019 Diego).
+fouadd designed and built the OneOS website, <https://fahadalijaved.github.io/OneOS/>: the systems catalog, the phone compatibility pages and the comparison, in one page served from the `gh-pages` branch. Credits to thatjoshguy67 (<https://github.com/thatjoshguy67>), the website styling is ported from tjg.gg with permission.
 
 ## MysticGSI
 

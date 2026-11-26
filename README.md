@@ -3,7 +3,7 @@
 OneOS-YAAP adapts the open-source [**OneOS**](https://github.com/fahadalijaved/OneOS) container hot-switch platform for **Samsung Galaxy A05 (`SM-A055F` / `SM-A055M`, codename `a05m`, MediaTek Helio G85 `MT6768` / `MT6769V/CZ`)** and AOSP-based custom ROM hosts (YAAP, LineageOS, crDroid, EvolutionX, PixelOS, GSI) across **Android 15 (API 35), Android 16 (API 36), and Android 17 (API 37)**.
 
 - **License & Notice:** Licensed under the Apache License, Version 2.0 — see [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and [`CREDITS.md`](CREDITS.md).
-- **Upstream Base:** [`fahadalijaved/OneOS`](https://github.com/fahadalijaved/OneOS) (`OneOS-source/` snapshot, based on `v0.5.32`).
+- **Upstream Base:** [`fahadalijaved/OneOS`](https://github.com/fahadalijaved/OneOS) (`OneOS-source/` snapshot, updated to `v0.5.50` / `fcb9d27`).
 - **Automated Releases & Self-Update:** Every push to `main` builds signed `OneOS-<version>.apk` and `OneOS-Probe-<version>.apk` via GitHub Actions and publishes a `Latest` GitHub Release with a validated `update.json` for seamless in-app auto-updates.
 
 ---
@@ -15,7 +15,7 @@ The GitHub Actions workflow applies:
 2. `oneos_repo_patches/apply_multirom_patches.py` (Multi-ROM guest profiles and hardware compatibility guards).
 3. `oneos_repo_patches/apply_android15_16_17_compat.py` (Android 15–17 host evaluation, SDK 36-on-37 cross-SDK bridge, automatic in-app self-update).
 
-| Host Android | Host API | SDK 37 Guest (ColorOS 17, LineageOS 24, Infinity-X 4.1, Nothing OS 5.0, HyperOS) | SDK 36 Guest (OxygenOS 16 `CPH2745`) |
+| Host Android | Host API | SDK 37 Guest (ColorOS 17, PixelOS 17, LineageOS 24, Infinity-X 4.1, Nothing OS 5.0, HyperOS, One UI 9.5) | SDK 36 Guest (OxygenOS 16 `CPH2745`) |
 | --- | --- | --- | --- |
 | **Android 15** | 35 | Prepare-only; switch blocked (ABI mismatch) | Prepare-only; switch blocked |
 | **Android 16** | 36 | Prepare-only; switch blocked (ABI mismatch) | Native SDK 36 switching supported |

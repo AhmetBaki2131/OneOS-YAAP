@@ -48,6 +48,12 @@ enum class GuestData {
      * image nor another family's for it.
      */
     ORIGINOS,
+
+    /**
+     * PixelOS's updater, net.pixelos.ota (0.5.35): its data also has Pixel's launcher and LineageOS packages (Aperture),
+     * so this word goes first. Never kept for Google's Pixel builds, nor theirs for it.
+     */
+    PIXELOS,
     OTHER,
     ;
 
@@ -60,6 +66,7 @@ enum class GuestData {
             HYPEROS -> SystemFamily.HYPEROS
             OXYGENOS -> SystemFamily.OXYGENOS
             ORIGINOS -> SystemFamily.ORIGINOS
+            PIXELOS -> SystemFamily.PIXELOS
             else -> null
         }
 
@@ -152,15 +159,26 @@ data class StageStatus(
             kind == StageKind.LINK || kind == StageKind.FILE -> emptyList()
             !exists || empty -> listOf(RootScript.BeginMode.NEW)
             otherImageData(imageId) != null -> listOf(RootScript.BeginMode.ASIDE)
-            image != null && guest.otherSystemThan(image) -> listOf(RootScript.BeginMode.ASIDE)
+            image != null && guest.otherSystemThan(image) && !ownOplusData(image) -> listOf(RootScript.BeginMode.ASIDE)
             ours -> listOf(RootScript.BeginMode.KEEP, RootScript.BeginMode.ASIDE)
             partial && guest != GuestData.LINEAGEOS -> listOf(RootScript.BeginMode.KEEP, RootScript.BeginMode.ASIDE)
             guest == GuestData.COLOROS || guest == GuestData.PIXEL || guest == GuestData.INFINITYX || guest == GuestData.HYPEROS ||
-                guest == GuestData.OXYGENOS || guest == GuestData.ORIGINOS ->
+                guest == GuestData.OXYGENOS || guest == GuestData.ORIGINOS || guest == GuestData.PIXELOS ->
                 listOf(RootScript.BeginMode.KEEP, RootScript.BeginMode.ASIDE)
             else -> listOf(RootScript.BeginMode.ASIDE)
         }
     }
+
+    /**
+     * 0.5.46 (Tab S9 FE+, "it is the same OS yet it thinks it is another one"): the ColorOS 17 Pad build is the
+     * OxygenOS family by its ids, but ColorOS there ignores OnePlus's membership app (OplusAppConfigManager: "locate
+     * /my_stock/priv-app/OPMemberShip ... ignored"), so its data reads as ColorOS's ([GuestData.COLOROS]) and every
+     * update after the first session was refused. Such data is its own when OneOS's marker (or the plan of an
+     * update that did not finish) says this very image made it. oneos_root.sh `begin keep` has the same exception.
+     */
+    fun ownOplusData(image: ImageRef): Boolean =
+        guest == GuestData.COLOROS && image.family == SystemFamily.OXYGENOS &&
+            (marker?.takeIf { ours } ?: pendingUpdate?.takeIf { partial })?.imageId == image.id
 
     /**
      * The image whose guest data OneOS's stage holds (its marker's), when
@@ -374,6 +392,7 @@ data class StageStatus(
             val guestLines = lines("stage.guest")
             val guest = when {
                 statuses["stage.guest"] != ProbeStatus.OK -> GuestData.NONE
+                guestLines.any { it == "packages $PIXELOS_WORD" } -> GuestData.PIXELOS
                 guestLines.any { it == "packages $INFINITYX_WORD" } -> GuestData.INFINITYX
                 guestLines.any { it == "packages $OXYGENOS_WORD" } -> GuestData.OXYGENOS
                 guestLines.any { it == "packages $ORIGINOS_WORD" } -> GuestData.ORIGINOS
@@ -425,6 +444,9 @@ data class StageStatus(
         /** The package status.list (and root's `begin keep`) takes for the Pixel guest's data: Pixel's launcher. */
         const val PIXEL_WORD = "com.google.android.apps.nexuslauncher"
         const val HYPEROS_WORD = "com.miui."
+
+        /** PixelOS's updater (its system_ext/priv-app/Updater). */
+        const val PIXELOS_WORD = "net.pixelos.ota"
 
         /** Infinity-X's updater (its system_ext/priv-app/Updater). */
         const val INFINITYX_WORD = "com.infinity.updater"

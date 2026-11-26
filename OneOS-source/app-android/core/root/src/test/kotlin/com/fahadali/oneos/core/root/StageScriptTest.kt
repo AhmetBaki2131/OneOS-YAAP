@@ -1139,6 +1139,23 @@ class StageScriptTest {
         refused(fr.run(RootScript.Verb.BEGIN, "keep", "f8", Images.ID_FIND_X9U_IN_1105, PackageSets.ID_X9U_IN_1105_SULTRA, "4"), "does not run coloros17-findx9u-in")
     }
 
+    @Test
+    fun galaxyZFold8StagesTheOneUi95Payloads() = eachShell { fr ->
+        fr.props["ro.product.model"] = "SM-F971B"
+        fr.props["ro.product.device"] = "h8q"
+        fr.props["ro.soc.model"] = "SM8850"
+        fr.writeProps()
+        val oneUi = Stager(fr, Profiles.FOLD8, Images.ID_ONEUI95)
+        // 0.5.35: the Fold8's own One UI 9.5 set, with Josh's Fold8 files (pull request #328).
+        assertEquals(PackageSets.ONEUI95_F8, oneUi.set)
+        oneUi.prepare()
+        val stageFiles = File(fr.stage, "files.sha256").readText()
+        for (name in oneUi.set.names) {
+            assertArrayEquals(name, oneUi.files.getValue(name), File(fr.stage, name).readBytes())
+            assertTrue(name, stageFiles.lineSequence().any { it.endsWith("  $name") })
+        }
+    }
+
     /**
      * 0.4.11: the Galaxy S26 (SM-S942 and the Japanese SC-51G, m1q, SM8850)
      * takes the S Ultra's two sets; the S24 Ultra (SM-S928, e3q, SM8650), S23
@@ -1735,6 +1752,28 @@ class StageScriptTest {
     }
 
     @Test
+    fun mediaChipChoiceIsScopedToOneUi95() = eachShell { fr ->
+        val s = Stager(fr)
+        s.prepare()
+        val launch = listOf("session", s.code, "0123456789abcdef", "0", "1", "0", "0", "0", "1", "0")
+        val verb = RootScript.Verb.LAUNCH
+        assertTrue(RootScript.problems(verb, launch + "2").isNotEmpty())
+        refused(fr.run(verb, *(launch + "0").toTypedArray()), "the media chip option is unavailable")
+        refused(fr.run(verb, *(launch + "1").toTypedArray()), "test root: every launch check passed")
+
+        Stager(fr, Profiles.S_ULTRA_8850, Images.ID_ONEUI95).prepare("aside")
+        refused(fr.run(verb, *(launch + "0").toTypedArray()), "test root: every launch check passed")
+        refused(fr.run(verb, *launch.toTypedArray()), "test root: every launch check passed")
+
+        fr.props["ro.product.model"] = "SM-F971B"
+        fr.props["ro.product.device"] = "h8q"
+        fr.props["ro.soc.model"] = "SM8850"
+        fr.writeProps()
+        Stager(fr, Profiles.FOLD8, Images.ID_ONEUI95).prepare("aside")
+        refused(fr.run(verb, *(launch + "0").toTypedArray()), "test root: every launch check passed")
+    }
+
+    @Test
     fun verboseBootChoiceIsWrittenOnlyAfterLaunchChecks() = eachShell { fr ->
         val s = Stager(fr)
         s.prepare()
@@ -1921,6 +1960,52 @@ class StageScriptTest {
         File(fr.stage, "persist_session.active").writeText("format=2\nboot_id=11111111-2222-3333-4444-555555555555\n")
         refused(fr.run(RootScript.Verb.BRING_FORGET, other), "a session is starting or running")
         assertTrue(File(dir, "$other/apk/base.apk").isFile)
+    }
+
+    /** debloat (0.5.32): a good list is written whole (root's, 0644); an empty one removes it; a bad line writes nothing. */
+    @Test
+    fun debloatWritesTheListOrNothing() = eachShell { fr ->
+        val s = Stager(fr)
+        s.prepare()
+        val list = File(fr.stage, "debloat.list")
+        fun send(text: String) = text.toByteArray().let { fr.run(RootScript.Verb.DEBLOAT, it.size.toString(), stdin = it) }
+        val good = "org.example.ads\t/system/app/Ads\norg.example.cloud\t/my_product/apps_extension/X/SimSwitchFirstTime/app/Cloud_v1.2\n"
+        val r = send(good)
+        s.ok(r)
+        assertEquals("debloat 2", r.reply.ok)
+        assertEquals(good, list.readText())
+        assertEquals("644", fr.mode(list))
+        assertFalse(File(fr.stage, "incoming/debloat.part").exists())
+        assertFalse(File(fr.stage, "debloat.new").exists())
+        // Bad lines: nothing is replaced.
+        for (bad in listOf(
+            "org.example.ads\t/product/overlay\n",
+            "org.example.ads\t/my_product/priv-app\n",
+            "org.example.ads\t/system/app/../priv-app/X\n",
+            "org.example.ads\tsystem/app/Ads\n",
+            "notapackage\t/system/app/Ads\n",
+            "org.example.ads /system/app/Ads\n",
+            "org.example.ads\t/system/app/Ads\textra\n",
+            "org.example.ads\t/system/app/Ads\n\norg.example.b\t/system/app/B\n",
+            (1..601).joinToString("") { "org.example.a$it\t/system/app/A$it\n" },
+        )) {
+            val rb = send(bad)
+            assertEquals("expected a refusal for [$bad]:\n$rb", RootScript.EXIT_REFUSED, rb.exit)
+            assertEquals(good, list.readText())
+            assertFalse(File(fr.stage, "incoming/debloat.part").exists())
+        }
+        assertTrue(RootScript.problems(RootScript.Verb.DEBLOAT, listOf("x")).isNotEmpty())
+        assertEquals(RootScript.EXIT_USAGE, fr.run(RootScript.Verb.DEBLOAT, "262145", stdin = ByteArray(0)).exit)
+        // Restore all: an empty list removes the file.
+        val empty = send("")
+        s.ok(empty)
+        assertEquals("debloat 0", empty.reply.ok)
+        assertFalse(list.exists())
+        s.ok(send(good))
+        // A running session refuses it and keeps the list.
+        File(fr.stage, "persist_session.active").writeText("format=2\nboot_id=11111111-2222-3333-4444-555555555555\n")
+        refused(send(""), "a session is starting or running")
+        assertEquals(good, list.readText())
     }
 
     /** bring-catalog: a good catalog is written whole; a bad line writes nothing; a session refuses it. */
@@ -2172,7 +2257,48 @@ class StageScriptTest {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { fr.run(RootScript.Verb.BRING_CLEAR, "x") }
     }
 
-    /** Only installed user apps (an APK under data/app): never a system app's path, a link, or a path that climbs. */
+    @Test
+    fun bringCopiesSystemApksOfflineAndFromTheHostSnapshot() = eachShell { fr ->
+        val stager = Stager(fr)
+        stager.prepare()
+        val pkg = "org.example.systemapp"
+        val updated = "org.example.updated"
+        val privileged = "org.example.privileged"
+        val path = "/system/priv-app/Example/Example.apk"
+        val updatedPath = "/data/app/~~token==/$updated-token==/base.apk"
+        File(fr.root, path).apply { parentFile.mkdirs(); writeText("host base") }
+        File(fr.root, "/system/priv-app/Example/split_config.apk").writeText("host split")
+        val rows = File(fr.root, "pm_system").apply {
+            writeText("package:$path=$pkg uid:12345\npackage:$path=$privileged uid:1000\npackage:$updatedPath=$updated uid:12346\n")
+        }
+        val staged = File(fr.stage, "data/oneos_bring")
+        File(fr.root, updatedPath).apply { parentFile.mkdirs(); writeText("host update before handoff") }
+        fr.hostCe(pkg).apply { mkdirs(); resolve("settings").writeText("host system data") }
+        val collected = bring(fr, pkg, privileged)
+        stager.ok(collected)
+        assertEquals("bring-collect 1", collected.reply.ok)
+        assertEquals("host base", File(staged, "$pkg/apk/Example.apk").readText())
+        assertEquals("host split", File(staged, "$pkg/apk/split_config.apk").readText())
+        assertFalse(File(staged, "$pkg/ce").exists())
+        assertTrue(File(staged, "$pkg/system").isFile)
+        assertFalse(File(staged, privileged).exists())
+        stager.ok(catalog(fr, "$pkg\tSystem App\t-\tsystem", "$updated\tUpdated App\t-\tsystem"))
+        assertEquals("600", fr.mode(File(fr.stage, "bring-system-apps")))
+
+        // After handoff the running package manager cannot resolve host packages.
+        assertTrue(rows.delete())
+        File(fr.stage, "persist_session.active").writeText("format=2\nboot_id=11111111-2222-3333-4444-555555555555\n")
+        val view = File(fr.root, "mnt/oneos_oneui")
+        File(view, "data").mkdirs()
+        File(view, updatedPath.removePrefix("/data/")).apply { parentFile.mkdirs(); writeText("host view update") }
+        File(fr.root, updatedPath).writeText("guest update")
+        stager.ok(fr.run(RootScript.Verb.BRING_ADD, pkg))
+        stager.ok(fr.run(RootScript.Verb.BRING_ADD, updated))
+        assertEquals("host view update", File(staged, "$updated/apk/base.apk").readText())
+        assertFalse(File(staged, "$updated/ce").exists())
+    }
+
+    /** An unverified system path, a link, or a path that climbs cannot be brought. */
     @Test
     fun bringSkipsWhatIsNotAnInstalledUserApp() = eachShell { fr ->
         val s = Stager(fr)
@@ -2259,5 +2385,77 @@ class StageScriptTest {
         assertTrue(RootScript.problems(RootScript.Verb.TOOL_APP, listOf("wipe", pkg)).isNotEmpty())
         assertEquals(emptyList<String>(), RootScript.problems(RootScript.Verb.TOOL_APP, listOf("off", pkg)))
         assertEquals(emptyList<String>(), RootScript.problems(RootScript.Verb.TOOL_APP, listOf("list")))
+    }
+
+    /**
+     * Tester builds (-Poneos.a17OnA16=true: app/build.gradle.kts ships this script with ONEOS_A17_ON_A16=1): One UI 9.5
+     * on a phone still on One UI 8 (SDK 36), whose set reads the installd codes at runtime (RUNTIME_CODES). The
+     * shipped script refuses the pair; the tester copy prepares and launches it with One UI 8.0's and 8.5's tables,
+     * and still refuses another Android 17 system on that phone.
+     */
+    @Test
+    fun oneUi95OnOneUi8OnlyInTheTesterScript() {
+        val shipped = Shipped.rootScript.readBytes()
+        val testerScript = Shipped.rootScriptText.replace("\nONEOS_A17_ON_A16=0\n", "\nONEOS_A17_ON_A16=1\n").toByteArray()
+        assertFalse(shipped.contentEquals(testerScript))
+        val tester = Profiles.withOneUi95OnA16(Profiles.STABLE)
+        val patches = Shipped.installdFixture.parentFile
+        val a85 = File(patches, "host_installd_a16.txt").readText()
+        val runtimeCodes = Regex("""(?m)^RUNTIME_CODES="([^"]*)"$""").find(Shipped.rootScriptText)!!.groupValues[1]
+        fun phone(fr: FakeRoot, model: String, device: String, soc: String) {
+            fr.props["ro.product.model"] = model
+            fr.props["ro.product.device"] = device
+            fr.props["ro.soc.model"] = soc
+            fr.props["ro.build.version.sdk"] = "36"
+            fr.writeProps()
+        }
+        /** Stages [s] with a guards.txt that has RUNTIME_CODES and the phone table [installd]; the verb results. */
+        fun stage(fr: FakeRoot, s: Stager, installd: String): List<FakeRoot.Run> {
+            val out = mutableListOf(s.begin())
+            for (n in s.files.keys) {
+                out += if (n == "guards.txt") s.receive(n, "# a set's guards\n$runtimeCodes\n".toByteArray()) else s.receive(n)
+            }
+            out += s.receiveRaw()
+            val t = InstalldTableFormat.write(
+                fr.props.getValue("ro.build.fingerprint"), "/system/framework/framework.jar", Hashes.sha256(fr.frameworkJar),
+                InstalldTableFormat.parseLegacy(installd),
+            ).toByteArray()
+            out += fr.run(RootScript.Verb.TABLE, t.size.toString(), stdin = t)
+            out += s.env()
+            out += s.finish()
+            return out
+        }
+        val s22u = tester.first { it.id == Profiles.S_ULTRA_8450.id }
+        // The shipped script: the S22 Ultra does not run One UI 9.5.
+        eachShell(shipped) { fr ->
+            phone(fr, "SM-S908B", "b0q", "SM8450")
+            refused(Stager(fr, s22u, Images.ID_ONEUI95).begin(), "does not run")
+        }
+        // One UI 8.0's table (S22 Ultra, BP2A), core/model's test fixture.
+        val a80 = File("../model/src/test/resources/host_installd_oneui80.txt").readText()
+        for (installd in listOf(a85, a80)) eachShell(testerScript) { fr ->
+            phone(fr, "SM-S908B", "b0q", "SM8450")
+            val s = Stager(fr, s22u, Images.ID_ONEUI95)
+            for (r in stage(fr, s, installd)) s.ok(r)
+            refused(s.launch(), "test root: every launch check passed")
+            // On a One UI 9 phone (SDK 37) its table is not One UI 8's: refused as in every build.
+            fr.props["ro.build.version.sdk"] = "37"
+            fr.writeProps()
+            refused(s.launch(), "installd table differs")
+        }
+        // The Galaxy A56 on One UI 8.5 in the tester build: One UI 9.5 launches, its usual Android 17 system does not.
+        eachShell(testerScript) { fr ->
+            phone(fr, "SM-A566B", "a56x", "s5e8855")
+            val color = Stager(fr, Profiles.A56)
+            val runs = stage(fr, color, a85)
+            for (r in runs.dropLast(3)) color.ok(r)
+            refused(runs[runs.size - 3], "installd table differs")
+        }
+        eachShell(testerScript) { fr ->
+            phone(fr, "SM-A566B", "a56x", "s5e8855")
+            val color = Stager(fr, Profiles.A56)
+            for (r in stage(fr, color, File(patches, "host_installd.txt").readText())) color.ok(r)
+            refused(color.launch(), "Android SDK 36, the image is 37")
+        }
     }
 }

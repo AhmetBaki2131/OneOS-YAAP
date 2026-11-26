@@ -1,0 +1,18 @@
+# framework overlays built by scripts/make-overlays.sh with the storage, installd, power, sysrq, weaver, biometric, gatekeeper, pdb, apexd, appid15000, nousers, nativeservices, wipesecrets and ksuappid guards, and the secims carve-out (com.sec.imsservice kept in android.uid.system from /system_ext/priv-app/OneOSSecIms only)
+# installd and IOemNetd codes read on the phone at runtime (OneOSInstalldCodes, OneOSOemNetdCodes): One UI 9.0 and 9.5 phones
+# charger power from Samsung's charging_type in BatteryService (OneOSChargePower)
+# framework_patched.jar: the image's framework.jar with One UI's camera transaction codes (patches/pixel_camera_abi.py); Privacy Display off (patches/oneui_no_privacy_display.py); engmode off where the phone's VINTF lacks ISehEngmode/default (patches/oneui_engmode_undeclared.py, set r4)
+# services_patched.jar: WindowManagerService's Privacy Display calls safe without a controller (patches/oneui_privacy_display_null_safe.py, set r3); its PrivacyDisplayController always made (patches/oneui_privacy_display_controller_always.py, set r5); VaultKeeperService unsupported without a registered ISehVaultKeeper HAL (patches/oneui_vaultkeeper_unreachable.py, set r6); a vendor signer stanza emptied by ignore_mac_permissions_package dropped, not fatal (patches/oneui_mmac_empty_signer.py, set r6)
+# telephony-common_patched.jar: the SMS service centre as an international number (patches/guest_smsc_international.py); SEND_SMS error 66 (sent, no result payload) counted as sent (patches/guest_sms_invalid_response.py)
+# libcamera_client_patched.so, libcameracompatbilityinfo_patched.so: the native camera client with One UI's codes (patches/pixel_camera_native.py)
+# guest vold name: gvld (vold_patched, service.incremental_patched.so, services_patched.jar and framework_patched.jar: patches/guest_own_vold.py and --framework for Samsung's AppLockPolicy, set r10)
+90ab78f0a3fbb175c4607883f7359ed7ab305257e816ae27dabf3af527a88d6a  services_patched.jar
+3a3e65e4a58655f3f77ddf99c7bcc44a0d45c661a245c48024f49e22d7614e86  framework_patched.jar
+cd02dba1153b2a3a2c0f87da617753d4a8e6c339246cb130e4d91f22506af51e  telephony-common_patched.jar
+23d98173e40ce788bc66d4a9678d06869fe5010ade40f001128b30c17ea57e7a  libcamera_client_patched.so
+720014ae5f57472b16183a563e1761798df3369a9dabe48a834158a5e2a9ce40  libcameracompatbilityinfo_patched.so
+22c4b0b701d623fc523f3be7e852716b4db384a00783fb6aad0cca9d6c30e941  vold_patched
+1ba375398bf0735df28af2d8e6ab5cd3e5609669e11f1f6dad503bc6e1568655  service.incremental_patched.so
+# Fold8 framework: guest-private PDI storage, native panel configuration and physical-display wallpaper routing.
+# 0.5.42 (oneui95_f8_r2): services_patched.jar with the guest's own screen lock (patches/guest_local_lock.py, adapted to One UI 9.5's R8 build); OneOSGuest.apk = the current OneOS app (0.15) without the Knox provider authority (scripts/build-guest-manager.sh oneui95)
+# 0.5.45 (oneui95_f8_r3): Fold8OneUI95Services.jar = his r24 jar with the same screen-lock patch (scripts/patch-built-jar.sh ... patches/guest_local_lock.py); guest_prepare.sh had stopped using it once services_patched.jar changed in r2 (Z Fold8 F971U 486f3ee7: system_server NPE in setWallpaperPhysicalDisplayId, the S26 Ultra build has that fold path stripped)

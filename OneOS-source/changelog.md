@@ -800,3 +800,268 @@ battery drain fixed.**
 - **HyperOS status bar icon spacing and the rounded app open/close animations** were lost with this version's new
   HyperOS files: HyperOS started its status bar and home screen before OneOS's sizes were on. Both now restart once
   when that happens.
+
+New in 0.5.50: **S22 Ultra (Exynos) One UI 9.5 setup, OriginOS camera on the Z Fold5.**
+- **Galaxy S22 Ultra (Exynos) with One UI 9.5 now starts** (the 0.5.49 fix worked), and no longer restarts the
+  phone during setup: Google's "Hey Google" crashed the Exynos 2200 voice wake-up chip until the whole phone reset.
+  On that chip OneOS now turns voice wake-up off (Hey Google and Bixby) before it can load (testing).
+- **OriginOS camera on the Z Fold5** and other folds: vivo's camera opened a fold screen its build doesn't have and
+  closed at once. It now opens with its normal layout (testing).
+- Galaxy S23 FE on One UI 8.5: the session logs record what the One UI 9.5 camera fix still needs.
+
+New in 0.5.49: **S26 series camera with every non-Samsung system, ColorOS and OriginOS notification sounds, S22 Ultra (Exynos) One UI 9.5.**
+- **Camera on One UI 9.5 phones (S26 series) with HyperOS, PixelOS, Pixel, LineageOS, Infinity-X, Nothing OS,
+  ColorOS and OriginOS**: One UI 9.5 added a field to every camera request and OneOS sent the old one, so the camera
+  failed and HyperOS on the S26 Ultra stopped 7 seconds after starting (testing).
+- **ColorOS notification, ringtone and alarm sounds** (Z Fold5, S23 and others): every sound waited 10 seconds for an
+  OPPO service a Samsung phone does not have, and notifications gave up before they played. OneOS now stands in
+  for it (testing).
+- **OriginOS notification sound**: OriginOS looked for One UI's sound files, which it does not have, so no default
+  sound was set. It now uses its own (testing).
+- **Galaxy S22 Ultra (Exynos) with One UI 9.5** should now start: its kernel refused the network program because
+  of root's small locked-memory limit, which OneOS now raises like Android's own loader (testing).
+- Session logs no longer show an earlier restart as the way the session ended.
+
+New in 0.5.48: **One UI 9.5 on every Galaxy Tab, the Galaxy Tab S11 Ultra, Z Fold8 (US) first setup, S25 Ultra restarts.**
+- **One UI 9.5 on every Galaxy Tab** we support (Tab S9, S9 Ultra, S9 FE+, S10 FE 5G and Wi-Fi, S11, S12 Ultra), next
+  to the tablet ColorOS/OxygenOS 17, each keeping its own tablet model (testing; the LCD and camera fixes are the
+  Tab S9 FE's only so far).
+- **Galaxy Tab S11 Ultra (SM-X930)** with the tablet ColorOS/OxygenOS 17 and One UI 9.5 (testing).
+- **One UI 9.5 first setup on US carrier phones** (Z Fold8 SM-F971U and others): Samsung's setup went on to a US
+  carrier activation step the image does not have and stopped there ("Settings has stopped"). OneOS now finishes the
+  setup at the home screen when that happens; add your accounts afterwards in Settings › Accounts (testing).
+- **Galaxy S25 Ultra with One UI 9.5: Bixby is turned off** for now. Setting up Bixby voice wake-up froze the whole
+  phone and the chip's watchdog restarted it (testing).
+
+New in 0.5.47: **S22 Ultra (Exynos) restart loop, Galaxy A17 freezes, Galaxy Tab S9 FE 5G, OriginOS on the Z Fold5.**
+- **Galaxy S22 Ultra (Exynos) with One UI 9.5 no longer restarts the phone again and again** (testing). Its kernel
+  refused a small network program One UI 9.5 needs, so the system never finished starting and Samsung's boot checker
+  restarted the phone. OneOS now tries two more ways to make it; if the phone still refuses, OneOS stops before
+  starting and returns to One UI once, with a message, instead of the restart loop.
+- **Galaxy A17 (MediaTek) with One UI 9.5: apps such as Telegram no longer freeze** (testing). Loading the "Hey Google"
+  voice model crashed the phone's audio chip about once a minute, and apps waiting for sound stopped responding.
+  OneOS now turns off Hey Google's always-listening mode when that happens, as it already did on Exynos phones.
+- **Galaxy Tab S9 FE 5G (SM-X516B/N)** with OxygenOS 17 Pad and One UI 9.5, like the Wi-Fi model (testing).
+- **Galaxy Z Fold5: OriginOS 7** too, as on the Z Flip5 (testing).
+
+New in 0.5.46: **Send to the OneOS team is back, Galaxy Tab fixes, Galaxy Tab S9 FE, OriginOS on the Z Flip5.**
+- **Send to the OneOS team** shows again in Last session and Session logs. It was hidden in every build since 0.5.24,
+  so only Share and Save were there. On Session logs, the "Send the logs to the OneOS team" line now opens it too.
+- **Galaxy Tabs: ColorOS no longer powers the tablet off** after 13-30 minutes. ColorOS's setup app has an alarm
+  that powers the device off while its pages wait; OneOS turns that alarm off (testing).
+- **Galaxy Tabs: "The data in the stage is another system's"** after the first session is fixed. ColorOS 17 on
+  tablets skips one OnePlus app, so OneOS took its own data for another system's and refused every update.
+- **Galaxy Tab S9 FE (SM-X510)** with OxygenOS 17 Pad and One UI 9.5, from pull request #371 by asarr22 (testing).
+- **Galaxy Z Flip5: OriginOS 7** too, as on the S23s with the same chip (testing).
+
+New in 0.5.45: **Camera for One UI 9.5 on One UI 8.5 phones, the Z Fold8 starts One UI 9.5 again, S22 fixes, clearer broken downloads.**
+- **Camera in One UI 9.5 on One UI 8.5 phones** (S23 FE, A35, S22s updated to One UI 8.5; testing): One UI 8.5 asks for
+  the camera in a newer way than One UI 8, so every camera call failed and Samsung's video call service crashed again
+  and again. These phones now get their own camera file.
+- **Z Fold8: One UI 9.5 starts again** (since 0.5.42 it stopped at startup).
+- **One UI 9.5 on the S22 and other One UI 8 phones** (testing): it stopped about 50 seconds in on a second network
+  log One UI 8 never set up. OneOS now sets that up for the session too.
+- **No sound on some Exynos phones** (S23 FE; testing): the "Hey Google" voice model was too big for the phone's voice
+  wake-up chip, which crashed the sound service every minute. OneOS now turns off Hey Google's always-on listening
+  in the other system when that happens.
+- **S Pen on Galaxy Tabs** (ColorOS; testing): the pen worked as a mouse pointer. It now writes and taps like a pen.
+- **"The download is damaged"** now says what to do: delete the file, download it again (use ADM from the Play Store
+  if Chrome keeps breaking it), then choose the new file. The button is Download again instead of Retry update,
+  which only checked the same broken file again.
+- Reports now say which root setting changed when the return to One UI fell back to a restart, and which app asked
+  the other system to power off.
+
+New in 0.5.44: **One UI 9.5 on the Galaxy S22 (Snapdragon) gets past its first minute, ColorOS on Galaxy Tabs as a tablet.**
+- 0.5.43 got One UI 9.5 starting on these phones, but on the S22 it stopped after about a minute: One UI 8's network
+  module asked for a newer network setting (L4S) that One UI 8 never set up. OneOS now sets it up, switched off,
+  for the session, and removes it when you return. Untested on a phone.
+- **ColorOS 17 on Galaxy Tabs is a tablet now:** it showed the phone lock screen, home screen and dock. OneOS now tells
+  ColorOS it runs on a tablet.
+
+New in 0.5.43: **One UI 9.5 starts again on One UI 8 phones (S22 series and others), Tab S9 Ultra and Tab S11.**
+- **One UI 9.5 stuck on the OneOS logo** (0.5.39 to 0.5.42, the S22 series, S23 FE and other phones whose sound driver
+  is the older kind): a sound check OneOS made before starting One UI 9.5 waited forever. It now asks only what
+  answers at once, so the system starts.
+- **Galaxy Tab S9 Ultra (SM-X910) and Galaxy Tab S11 (SM-X730):** ColorOS 17 for tablets, testing.
+
+New in 0.5.42: **One UI 9.5 boots again on the Galaxy S22 series, its own screen lock, and more Galaxies.**
+- **One UI 9.5 on the Galaxy S22 series and other One UI 8 phones** stopped at the One UI logo since 0.5.39's camera
+  change: the camera's native part still spoke One UI 8's numbering and stopped the system as it started. It now
+  speaks One UI 9's, so the system starts with the camera on. Untested on a phone.
+- **Screen lock in One UI 9.5** (testing): One UI 9.5 now has its own lock screen with your PIN, pattern or password,
+  as the other systems do.
+- **The OneOS app inside One UI 9.5** shows One UI's artwork and the root page again (it showed ColorOS's header and
+  no root items).
+- **Galaxy Tabs: the tablet system is ColorOS 17** (it was called OxygenOS 17), now with ColorOS artwork. Also for the
+  Galaxy Tab S9 FE+ (SM-X610) and Tab S9 FE (SM-X510), testing.
+- **Galaxy S22+ with Snapdragon** (SM-S906E): OxygenOS 16 and One UI 9.5, as on the other Snapdragon S22s. Untested.
+
+New in 0.5.41: **Galaxy Tabs (testing), choose your download mirror, proximity in S24 Ultra calls.**
+- **Galaxy Tabs on One UI 9** (testing): OxygenOS 17 built from the OnePlus Pad 4, the one system offered on the Galaxy
+  Tab S9 (SM-X710), Tab S10 FE and Tab S10 FE 5G (SM-X520, SM-X526) and Tab S12 Ultra (SM-X940). Not tried on a
+  tablet yet: the screen, sound, S Pen or keyboard cover may not work; share the session logs.
+- **Pick where to download a system:** every Download button now asks SourceForge, Google Drive or gofile, and
+  offers your last choice first (SourceForge is slow for many users).
+- **Proximity during calls on the Galaxy S24 Ultra** (ColorOS, PixelOS and the others): the screen turns off at your
+  ear. The S24 Ultra has no proximity sensor of its own; the touchscreen's ear detection now stands in, as on the
+  S24 FE. Untested on an S24 Ultra.
+
+New in 0.5.40: **Calls on SIM 2 with sound on the Galaxy S24 Ultra, and Screen resolution in One UI 9.5 no longer
+sticks.**
+- **Calls on the second SIM** (Galaxy S24 Ultra and other Snapdragon Galaxies with Qualcomm's newer audio driver, in
+  ColorOS, PixelOS and the other systems): a call on SIM 2 started on SIM 1's voice channel and had no sound either
+  way. OneOS now moves the call to SIM 2's channel as soon as it starts. Untested on a phone.
+- **Screen resolution in One UI 9.5:** switching from QHD to FHD or HD made everything too small and switching back
+  did not help. A bad switch no longer sticks: every new session starts at the panel's own resolution (Screen zoom
+  is kept). Switching inside a session can still look wrong; leave it until the next start.
+
+New in 0.5.39: **Camera in One UI 9.5 on the Galaxy S22 series and other One UI 8 phones, and the crackling fix on
+more phones.**
+- **Camera on One UI 8 phones** (experimental, untested on a phone): One UI 9.5 now talks to One UI 8's camera service
+  in its own numbering (read from the S22 Ultra), sends the rotation setting the way One UI 8 expects, and configures
+  camera streams with the calls One UI 8 has. Samsung Camera and the torch are back there.
+- **No more crackling sound in One UI 9.5**, now on every phone it affects: 0.5.38's fix looked for the newer audio
+  driver in one place only and missed it on the Galaxy A56 (still 0.5 ms buffers and hundreds of breaks).
+
+New in 0.5.38: **One UI 9.5 on the Galaxy S22 series and other phones still on One UI 8, the OneOS app and clean
+sound in One UI 9.5, the Galaxy Z Fold4, and S24 Ultra Bluetooth audio.**
+- **One UI 9.5 on phones still on One UI 8.0/8.5** (experimental): the Galaxy S22, S22+ and S22 Ultra (Snapdragon
+  and Exynos), S23 FE, Z Fold4 and the Galaxy A, M and F phones held on One UI 8 can now start One UI 9.5.
+  Thirteen test rounds with S22 testers fixed what Android 16 cannot give an Android 17 system: its own system
+  modules, networking (no stop at boot or on calls), Bluetooth, the screen's size and sharpness, SELinux for new
+  apps, NFC, the quick panel and the setup screens. The camera stays off on these phones for now, and you confirm a
+  short warning before the switch.
+- **OneOS app in One UI 9.5:** One UI 9.5 only installs system apps on its own allow list, so the OneOS app (and
+  with it Back to One UI) was missing on phones on One UI 9. It is now on that list for the session.
+- **No more crackling sound in One UI 9.5** on the Galaxy A56, A57, S26 FE and other phones whose audio driver is
+  older than One UI 9.5: One UI 9.5 cut the speaker's audio buffer to an eighth there (0.5 ms), and the sound broke
+  up thousands of times a session. It now keeps the full buffer.
+- **Galaxy Z Fold4 (SM-F936)** with OxygenOS 16 (pull request #361 by jinkun1998): tested by the contributor; the
+  cover screen's brightness now follows the slider. Known: the camera does not work, and the phone runs warm.
+- **Galaxy S24 Ultra Bluetooth audio** in Pixel, PixelOS, LineageOS and Infinity-X (pull request #358 by
+  ankaserdev): music plays through Samsung's software Bluetooth route instead of staying on the speaker.
+- **Keyboard covers** (pull request #362 by crisazas): detaching a keyboard cover no longer leaves a key reader
+  using a full CPU core until the next restart.
+- **Also fixed:** a black screen on OxygenOS and ColorOS on some Exynos phones with a 120 Hz screen (Galaxy A25,
+  since 0.5.37); Bluetooth stuck at "turning on" in One UI 9.5 on the S22 Ultra; One UI 9.5 stopping at boot on the
+  S22 Ultra (Exynos).
+- Known: changing Screen resolution in One UI 9.5's settings makes the screen too small and does not switch back;
+  leave it as it is for now. Untested on a phone: the One UI 9.5 app and sound fixes, the Fold4 brightness changes,
+  and One UI 9.5 on One UI 8 beyond the S22 series.
+
+New in 0.5.37: **Camera on One UI 9.5 phones, the Galaxy S24 FE on ColorOS, ColorOS's equalizer, and the screen
+compositor on the fast CPU cores.**
+- **Camera on phones with One UI 9.5** (the Galaxy S26 series): One UI 9.5 numbers its camera service calls
+  differently. PixelOS, Pixel, Infinity-X, Nothing OS, HyperOS, ColorOS, LineageOS, OriginOS and One UI 9.5 now
+  pick the matching camera files on those phones. LineageOS on the S26 Ultra stopped 40 s after the start for this
+  reason (its system crashed at the camera); it should start now.
+- **Galaxy S24 FE and Exynos phones on ColorOS** (pull request #355 by Energobro, brought in with safety changes):
+  screen recording, hardware screen corners and an anti-aliased camera cutout, proximity during calls, the camera
+  sensors, reverse wireless and bypass charging from ColorOS's own switches (One UI's charging settings are put
+  back on the return), Dolby levels, and no loud burst or click when audio is paused.
+- **ColorOS's Equalizer** (Settings, Sound) opens OneOS's sound effects page instead of an empty screen.
+- **Screen compositor on the fast cores:** the other system's compositor stayed on the phone's slow CPU cores for the whole
+  session (seen on the A36: up to 24 ms a frame, slow first touches). It now runs where One UI's own runs.
+- **Lighter animations** (OneOS app in ColorOS): switching it on or off now restarts ColorOS for a moment, so
+  turning it off really brings the app open and close animations back.
+- **PixelOS screen corners** on phones that run PixelOS at FHD+ on a QHD screen (Galaxy S24+): the corners were
+  rounder than the screen.
+- Untested on a phone: the One UI 9.5 camera (needs an S26 on One UI 9.5), the S24 FE fixes beyond the
+  contributor's own phone. Known: changing HyperOS's region restarts the other system; a fix is in the works.
+
+New in 0.5.36: **HyperOS fits the screen on QHD Ultras, SMS on more phones, PixelOS corners, safer returns.**
+- **HyperOS on the S24 Ultra, S25 Ultra and other QHD phones left at FHD+:** the system ran the whole QHD screen
+  with the density meant for FHD+, and HyperOS's own scaling then made everything about a quarter too big
+  (Control Center cut off on both sides). HyperOS now gets the density for the width it really runs at; the
+  Exynos S24+ (which runs it at FHD+) keeps One UI's.
+- **Incoming SMS** on the Galaxy A56, A57 and S26 Ultra: their Samsung radio library has the same message check in
+  another form, which OneOS did not recognise, so no SMS arrived in the guest. It is found by its instructions now.
+- **PixelOS screen corners** follow the phone's own rounding: apps rounded to the display's corners no longer show
+  grey edges (confirmed on the A36).
+- **Return to One UI** no longer reboots when a guest app compile is still hanging in the background (A57 on
+  ColorOS): OneOS stops it and finishes the return in place.
+- Untested on a phone: the HyperOS density on the Ultras, SMS on the A56/A57/S26 Ultra.
+
+New in 0.5.35: **PixelOS 17 on every Galaxy on One UI 9, One UI 9.5 on the Z Fold8 with its own files, Dolby on
+Bluetooth, and contributors' fixes.**
+- **PixelOS 17** (new system, the Pixel experience built for the A series' CPUs; Google's Pixel builds cannot run on
+  them): on **every bar phone on One UI 9** (S and A series, S22 and newer), with its own card; Folds and Flips keep
+  their own Pixel builds. Tested on the A36, untested on the others: in-display fingerprint and face
+  unlock, Always-On Display in the panel's low-power mode, the large lock screen clock, a brightness range and a
+  slider that follows One UI's (the middle of the bar is no longer near the bottom), the status bar centred on
+  the camera hole, calls (also over Bluetooth) and SMS. Face unlock stays set up after a return to One UI.
+- **Dolby Atmos follows the music:** in the AOSP-based systems Samsung's Dolby stayed on the speaker's output when
+  music moved to Bluetooth earbuds; it now moves with it (A36 with Galaxy Buds: confirmed).
+- **Fingerprint and lock screen in the Pixel-style systems:** the in-display sensor's icon has the right size, and
+  the lock screen's message line sits above the sensor circle instead of on it.
+- **One UI 9.5:** the OneOS app inside it is installed again (One UI 9.5 only installs system apps on its own
+  list); MediaTek A and M phones (A17) use their own Samsung Camera instead of the A36's, whose HDR mode their
+  camera driver refused (the preview froze). The **Galaxy Z Fold8** gets its own One UI 9.5 files from Josh
+  (thatjoshguy67, pull request #328): its two screens, cover and inner Home layouts, taskbar, Settings and
+  rotation; other phones don't download them. Also from #328: **Feature flags** on the One UI 9.5 card (the
+  Dynamic Island media player, on by default) and **search and system apps in Bring apps**.
+- **ColorOS on QHD phones left at FHD+** (S+ and Ultra): ColorOS ran the full QHD screen while keeping One UI's
+  FHD+ size for its layout; both now match (Sa12008s, who found, fixed and tested it).
+- **Wireless debugging inside a system** accepts devices paired there (syedarhamraza, pull request #298).
+- **New phone:** the Galaxy M36 5G (pull request #327), untested.
+- Untested on a phone: PixelOS beyond the A36, the One UI 9.5 OneOS app and MediaTek camera, the Z Fold8's One UI
+  9.5 files, the M36.
+
+New in 0.5.34: **S24 FE zoomed photos and steady stereo, A16 brightness, USB-C headphones on the A35, and a safer
+Debloat.**
+- **Samsung Camera:** zoomed photos no longer close the camera on phones whose One UI lacks the S26 Ultra camera's
+  AI Clear Zoom library (S24 FE): the camera then does without that step.
+- **Stereo speakers** stay on: the earpiece speaker is powered at every start of playback, as One UI does (0.5.33
+  powered it once, so stereo came and went).
+- **Brightness on HyperOS (Galaxy A16 4G):** Samsung's lights service refused every brightness HyperOS sent, so the
+  slider did nothing; OneOS now drives the panel itself when that happens.
+- **USB-C headphones (Galaxy A35 and others):** the systems found only the USB accessory output and played nothing
+  on wired USB headphones; they now get USB headphone outputs as One UI has them. Thanks to the tester who sent a
+  working policy file.
+- **Debloat** no longer offers apps that other apps need as a library (HyperOS's Xiaomi Cloud SDK and two more):
+  removing it broke the phone app, so calls and mobile data stopped. Anyone who removed one gets it back at the
+  next start.
+- Untested on a phone: all of the above.
+
+New in 0.5.33: **stereo speakers, the S24 FE camera, the ColorOS fingerprint circle, and One UI 9.5 without
+freezes or reboots.**
+- **Stereo speakers** in every system on Galaxies whose second speaker is the earpiece (S24 FE and others): One
+  UI's own audio service powers the earpiece speaker for media; the other systems never did, so only the bottom
+  speaker played. OneOS now does it, outside calls.
+- **Samsung Camera on the S24 FE** (ColorOS): photo and video stayed black. The camera looked up the FE's 10 MP
+  selfie sensor in a crop table the S26 Ultra's camera has no entry for. ColorOS's files have a new revision.
+- **ColorOS lock screen fingerprint circle** at every wake on every phone: ColorOS waited for an Always-On Display
+  doze that never ends on a Galaxy, so the circle never showed though the sensor worked.
+- **One UI 9.5 no longer freezes** on the S25, S25 Ultra and S24 Ultra: OneOS's own session diagnostics (stack
+  dumps of the launcher and SystemUI, a scan of every open file) stopped the whole phone; users held the keys and
+  got the blue upload-mode screen. They now run only when the system is stuck before unlocking.
+- **One UI 9.5 returns to One UI without a reboot:** its storage service took One UI's own name, so every return
+  restarted the phone. One UI 9.5's files have a new revision.
+- Untested on a phone: the S24 FE camera and stereo (the A36 has neither), the One UI 9.5 return (A36 can test).
+
+New in 0.5.32: **Debloat, ColorOS raise to wake, the A-series camera in One UI 9.5, and the fingerprint circle on
+the S24+, S25+ and Ultras.**
+- **Debloat** (each system's page, under Apps): choose the system's apps to leave out at its next start. Safe to
+  remove (nothing you use goes) and Remove with care (each app says what stops working, and asks once more) are
+  separate pages, the apps grouped by who made them. **Same as MysticGSI's debloat** ticks what MysticGSI's own
+  builds remove (ColorOS: Metis, UMS, AIUnit, Global Search and the rest), which made ColorOS clearly smoother on
+  the A36. Apps you updated from the Play Store go with their updates, and their code and data are deleted. Restore
+  all brings every app back at the next start, HyperOS's preinstalled apps included. The system image is never
+  changed. Always-On Display stays: the lock screen's fingerprint circle needs it.
+- **ColorOS raise to wake** works: ColorOS took every Galaxy lift for "put down" (OPPO's sensor reports a lift
+  differently). It now uses the Galaxy's own pick-up sensor (A36: confirmed). ColorOS's files have a new revision.
+- **ColorOS Lighter animations** in the OneOS app inside ColorOS (Performance): OPPO's mid-range effects instead of
+  its flagship ones. Smoother on most Galaxies, but apps open and close without their animation; off by default.
+- **One UI 9.5 camera on Galaxy A and M phones:** the S26 Ultra's camera of the image died at launch on their
+  sensors (A17). A and M phones now get the A series' own Samsung Camera. One UI 9.5's files have a new revision.
+  On the **S26 Ultra** itself the camera no longer closes at launch, and Samsung's Message Guard no longer crashes.
+- **Fingerprint circle on the S24+, S25+ and the Ultras** (QHD screens at their default FHD+): it sat a quarter too
+  low in the Pixel systems, Nothing OS, LineageOS, Infinity-X and ColorOS, and far from the sensor in HyperOS.
+- **HyperOS on the S25 Ultra and other QHD phones at QHD** no longer looks zoomed in, like a foldable.
+- **120 Hz on the S24 FE** and other Galaxies whose One UI lists its fast mode as 120.00001 Hz: the systems ran at
+  60 Hz, so swipes lagged.
+- **Galaxy A17 5G on One UI 9.5:** no more kernel panics from a second double-tap-to-wake writer.
+- **Back to One UI with Volume Up + Volume Down** now buzzes once when the 3 s hold is taken, so a frozen black
+  screen still shows it worked.
+- Pixel 11 phones' modem thermal manager and HyperOS (Lhasa) Find Device are left out like their siblings'.
+- Untested on a phone: the One UI 9.5 A-series camera, the QHD fingerprint and HyperOS fixes (A36: 1080 px).

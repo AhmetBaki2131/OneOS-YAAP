@@ -325,13 +325,30 @@ OneLineage-derived session scripts (published with WeWaffles' permission). See
   the Fold8's Find N6 ColorOS set, its cover display, Quick Settings, AOD, widgets,
   Pocket Studio and Google fixes, and Samsung's hinge sensor for half-folded
   postures and the open/close animations in ColorOS and Pixel, which the Z Fold8
-  Ultra uses too.
+  Ultra uses too. Also provided base style for OneOS website.
 - **[@vdcoolok](https://github.com/vdcoolok)**: the screen lock kept inside the guest
   ([pull request #152](https://github.com/fahadalijaved/OneOS/pull/152)), which the guest's own
   PIN, pattern or password of 0.4.95 follows, and its enrolment handle (0.5.17); fingerprint and
   face unlock with One UI's own enrolments: the guest reaching the phone's fingerprint sensor and
   One UI's enrolment lists carried into the guest (0.5.17, Nothing OS first); and earlier the
   guest SMS fixes (#58), faster starts and returns (#107) and live wallpapers kept (#133).
+- **[@Sa12008s](https://github.com/Sa12008s)**: ColorOS's stable display size on QHD Galaxies left at
+  FHD+ (0.5.35), found, fixed and tested on the phone.
+- **[@syedarhamraza](https://github.com/syedarhamraza)**: Wireless debugging inside a system accepting
+  devices paired there ([pull request #298](https://github.com/fahadalijaved/OneOS/pull/298)).
+- **[@bidaighrissi1-stack](https://github.com/bidaighrissi1-stack)**: the Galaxy M36 5G profile
+  ([pull request #327](https://github.com/fahadalijaved/OneOS/pull/327)).
+- **[@Energobro](https://github.com/Energobro)**: Galaxy S24 FE (Exynos) and ColorOS fixes: screen
+  recording, rounded corners and the camera cutout, audio with an EQ screen, camera, proximity, charging and
+  fingerprint ([pull request #355](https://github.com/fahadalijaved/OneOS/pull/355), 0.5.37).
+- **[@ankaserdev](https://github.com/ankaserdev)**: Bluetooth audio on the Galaxy S24 Ultra with the Pixel,
+  PixelOS, LineageOS and Infinity-X systems ([pull request #358](https://github.com/fahadalijaved/OneOS/pull/358), 0.5.38).
+- **[@jinkun1998](https://github.com/jinkun1998)**: Galaxy Z Fold4 support with OxygenOS 16 and the dual-panel
+  backlight bridge ([pull request #361](https://github.com/fahadalijaved/OneOS/pull/361), 0.5.38).
+- **[@crisazas](https://github.com/crisazas)**: the return keys no longer keep a core busy after a keyboard
+  cover is detached ([pull request #362](https://github.com/fahadalijaved/OneOS/pull/362), 0.5.38).
+- **[@asarr22](https://github.com/asarr22)**: Galaxy Tab S9 FE support with One UI 9.5
+  ([pull request #371](https://github.com/fahadalijaved/OneOS/pull/371)).
 - **[ducttape33](https://github.com/ducttape33)** and **[kett1m](https://github.com/kett1m)**:
   [backdownload](https://github.com/kett1m/backdownload) (GPL-3.0), which keeps Samsung's Download
   Mode reachable with a screen lock set and returns there when a switch fails.
